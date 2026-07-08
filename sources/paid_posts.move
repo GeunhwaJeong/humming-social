@@ -19,6 +19,7 @@ module humming::paid_posts;
 use humming::feed::{Self, Feed};
 use humming::platform::{Self, FeeConfig};
 use humming::rules;
+use std::string::String;
 use haneul::coin::Coin;
 use haneul::event;
 use haneul::table::{Self, Table};
@@ -33,6 +34,7 @@ const EInvalidPrice: u64 = 6;
 const ECannotPaywallRepost: u64 = 7;
 const EWrongVersion: u64 = 8;
 const EAlreadyCurrent: u64 = 9;
+const EPriceMismatch: u64 = 10;
 
 public struct PostPaywall<phantom T> has key {
     id: UID,
@@ -64,6 +66,11 @@ public struct PostPurchased has copy, drop {
     buyer: address,
     amount: u64,
     fee: u64,
+    /// The post's content pointer at purchase time. The author remains
+    /// free to edit the post afterwards; this snapshot is the buyer's
+    /// on-chain evidence of what was sold, and what the app should
+    /// keep serving to this buyer in a dispute.
+    content_uri: String,
 }
 
 public struct PaywallPriceChanged has copy, drop {
@@ -108,16 +115,22 @@ public fun create<T>(feed: &mut Feed, post_id: u64, price: u64, ctx: &mut TxCont
 
 /// Buy the post once. Proceeds (minus the platform's cut) go straight
 /// to the author; the purchase is recorded permanently.
+///
+/// `expected_price` is the price the buyer saw when signing: if the
+/// author's price change lands first, the purchase aborts instead of
+/// silently charging the new price.
 public fun purchase<T>(
     paywall: &mut PostPaywall<T>,
     fee_config: &FeeConfig,
     feed: &Feed,
+    expected_price: u64,
     payment: &mut Coin<T>,
     ctx: &mut TxContext,
 ) {
     assert_version(paywall);
     assert!(paywall.feed == object::id(feed), EWrongFeed);
     assert!(paywall.active, EPaywallClosed);
+    assert!(paywall.price == expected_price, EPriceMismatch);
     // A deleted post stops selling (its content pointer is cleared).
     assert!(feed::post_exists(feed, paywall.post_id), EPostNotFound);
     let buyer = ctx.sender();
@@ -133,7 +146,13 @@ public fun purchase<T>(
         buyer,
         amount: paywall.price,
         fee,
+        content_uri: feed::post_content_uri(&feed::post(feed, paywall.post_id)),
     });
+}
+
+#[test_only]
+public fun purchase_event_content_uri(e: &PostPurchased): String {
+    e.content_uri
 }
 
 // === Administration (author-gated) ===

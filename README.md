@@ -26,7 +26,7 @@ sources/
     ├── followers_only_rule.move      Followers-only replies
     └── subscriber_only_rule.move     Active-subscriber-only interactions
 tests/
-└── humming_tests.move            62 scenario tests (all passing)
+└── humming_tests.move            68 scenario tests (all passing)
 ```
 
 ## Architecture mapping
@@ -286,11 +286,38 @@ Thirteen tests (49 → 62) pin the fee split on every path, the ceiling,
 the walk-to-zero flow, subscription stacking/lapse/re-subscribe/gift,
 the subscriber-gated reply E2E, and every paywall error path.
 
+### 11. Second review round: multi-tier gates, price guards, purchase snapshots
+
+An independent review of the monetization layer surfaced three
+product-level findings, fixed here (62 → 68 tests):
+
+- **Multi-tier access could not be expressed.** Rule identity is the
+  witness type name, so a rule cannot be attached to one rule set
+  twice — and `subscriber_only_rule`'s config held a single tier ID,
+  making "silver OR gold subscribers" (the basic Patreon shape)
+  impossible. The config now holds a `vector<ID>` of accepted tiers:
+  one instance, any-of-these-tiers semantics — the role Lens V3's
+  configSalt plays for its multi-instance rules. `token_gated_rule`
+  had the same limitation across coin types; its witness is now
+  generic over the coin (`TokenGatedRule<T>`), so "hold coin X OR
+  coin Y" is two any-of entries in one set.
+- **No price guard.** `subscribe`, `purchase`, and `pay` all read the
+  live price, so a creator's price change landing before a buyer's
+  transaction silently charged the new price (the common wallet habit
+  of passing a large coin makes this real). All three now take the
+  `expected_price`/`expected_amount` the payer saw when signing and
+  abort on mismatch.
+- **Paywalled content could be swapped after purchase.** The author
+  can still edit (deliberately — typo fixes are legitimate), but
+  `PostPurchased` now snapshots the post's `content_uri` at purchase
+  time: on-chain evidence of what was sold, and what the app should
+  keep serving to that buyer in a dispute.
+
 ## Build & test
 
 ```bash
 haneul move build
-haneul move test   # 62 tests
+haneul move test   # 68 tests
 ```
 
 ## License

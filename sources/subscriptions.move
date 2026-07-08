@@ -31,6 +31,7 @@ const EWrongCap: u64 = 1;
 const EInvalidConfig: u64 = 2;
 const EWrongVersion: u64 = 3;
 const EAlreadyCurrent: u64 = 4;
+const EPriceMismatch: u64 = 5;
 
 public struct Tier<phantom T> has key {
     id: UID,
@@ -119,16 +120,22 @@ public fun create<T>(
 /// Pay for one period for `beneficiary` (usually the sender; anyone
 /// may gift). An active subscription is extended from its expiry; a
 /// lapsed or new one starts from now.
+///
+/// `expected_price` is the price the payer saw when signing: if the
+/// creator's price change lands first, the purchase aborts instead of
+/// silently charging the new price.
 public fun subscribe<T>(
     tier: &mut Tier<T>,
     fee_config: &FeeConfig,
     beneficiary: address,
+    expected_price: u64,
     payment: &mut Coin<T>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
     assert_version(tier);
     assert!(tier.active, ETierClosed);
+    assert!(tier.price == expected_price, EPriceMismatch);
     let fee = platform::collect(fee_config, payment, tier.price, tier.recipient, ctx);
     let now = clock.timestamp_ms();
     let expires_ms = if (tier.subs.contains(beneficiary)) {

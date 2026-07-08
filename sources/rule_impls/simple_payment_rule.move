@@ -16,6 +16,7 @@ use humming::rules::{Self, Request, RuleSet, RuleSetCap};
 use haneul::coin::Coin;
 
 const EAlreadyPaid: u64 = 1;
+const EPriceMismatch: u64 = 2;
 
 public struct SimplePaymentRule has drop {}
 
@@ -45,15 +46,21 @@ public fun remove<OP, T>(set: &mut RuleSet<OP>, cap: &RuleSetCap) {
 /// is split off `payment`, so callers can pass any coin holding at
 /// least that much and keep the change. Paying the same rule set twice
 /// for one request aborts rather than taking a second payment.
+///
+/// `expected_amount` is the amount the payer saw when signing: if the
+/// rule was re-configured with a higher amount in the meantime, the
+/// payment aborts instead of silently charging more.
 public fun pay<OP, T>(
     set: &RuleSet<OP>,
     fee_config: &FeeConfig,
+    expected_amount: u64,
     req: &mut Request<OP>,
     payment: &mut Coin<T>,
     ctx: &mut TxContext,
 ) {
     assert!(!rules::has_approval<OP, SimplePaymentRule>(set, req), EAlreadyPaid);
     let config = rules::config<OP, SimplePaymentRule, Config<T>>(set);
+    assert!(config.amount == expected_amount, EPriceMismatch);
     platform::collect(fee_config, payment, config.amount, config.recipient, ctx);
     rules::add_approval(SimplePaymentRule {}, set, req);
 }
