@@ -22,6 +22,8 @@ const EWrongRuleSet: u64 = 4;
 const EKeyMismatch: u64 = 5;
 const EWrongCap: u64 = 6;
 const ENotBanned: u64 = 7;
+const EWrongVersion: u64 = 8;
+const EAlreadyCurrent: u64 = 9;
 
 /// Operation marker: joining the group.
 public struct JoinGroupOp {}
@@ -33,6 +35,7 @@ public struct Membership has drop, store {
 
 public struct Group has key {
     id: UID,
+    version: u64,
     metadata_uri: String,
     /// ID of the shared `RuleSet<JoinGroupOp>`.
     join_rules: ID,
@@ -83,6 +86,7 @@ public fun create(metadata_uri: String, ctx: &mut TxContext): (GroupAdminCap, Ru
     let (set, set_cap) = rules::new<JoinGroupOp>(ctx);
     let group = Group {
         id: object::new(ctx),
+        version: rules::current_version(),
         metadata_uri,
         join_rules: object::id(&set),
         members: table::new(ctx),
@@ -100,6 +104,7 @@ public fun create(metadata_uri: String, ctx: &mut TxContext): (GroupAdminCap, Ru
 // === Join (rule-gated) ===
 
 public fun request_join(group: &Group, ctx: &mut TxContext): (JoinTicket, Request<JoinGroupOp>) {
+    assert_version(group);
     let account = ctx.sender();
     assert!(!group.members.contains(account), EAlreadyMember);
     assert!(!group.banned.contains(account), EBanned);
@@ -115,6 +120,7 @@ public fun execute_join(
     req: Request<JoinGroupOp>,
     clock: &Clock,
 ) {
+    assert_version(group);
     let JoinTicket { group: group_id, key, account } = ticket;
     assert!(group_id == object::id(group), EWrongGroup);
     assert!(object::id(join_rules) == group.join_rules, EWrongRuleSet);
@@ -124,6 +130,7 @@ public fun execute_join(
 }
 
 public fun leave(group: &mut Group, ctx: &TxContext) {
+    assert_version(group);
     let account = ctx.sender();
     assert!(group.members.contains(account), ENotMember);
     group.members.remove(account);
@@ -140,6 +147,7 @@ public fun admin_add_member(
     account: address,
     clock: &Clock,
 ) {
+    assert_version(group);
     assert_cap(group, cap);
     assert!(!group.members.contains(account), EAlreadyMember);
     assert!(!group.banned.contains(account), EBanned);
@@ -147,6 +155,7 @@ public fun admin_add_member(
 }
 
 public fun admin_remove_member(group: &mut Group, cap: &GroupAdminCap, account: address) {
+    assert_version(group);
     assert_cap(group, cap);
     assert!(group.members.contains(account), ENotMember);
     group.members.remove(account);
@@ -156,6 +165,7 @@ public fun admin_remove_member(group: &mut Group, cap: &GroupAdminCap, account: 
 
 /// Ban an account: removes it if currently a member and blocks joining.
 public fun ban(group: &mut Group, cap: &GroupAdminCap, account: address) {
+    assert_version(group);
     assert_cap(group, cap);
     if (group.members.contains(account)) {
         group.members.remove(account);
@@ -167,6 +177,7 @@ public fun ban(group: &mut Group, cap: &GroupAdminCap, account: address) {
 }
 
 public fun unban(group: &mut Group, cap: &GroupAdminCap, account: address) {
+    assert_version(group);
     assert_cap(group, cap);
     assert!(group.banned.contains(account), ENotBanned);
     group.banned.remove(account);
@@ -174,8 +185,17 @@ public fun unban(group: &mut Group, cap: &GroupAdminCap, account: address) {
 }
 
 public fun set_metadata_uri(group: &mut Group, cap: &GroupAdminCap, metadata_uri: String) {
+    assert_version(group);
     assert_cap(group, cap);
     group.metadata_uri = metadata_uri;
+}
+
+/// Bring a group created under an older package version up to the
+/// current one, re-enabling its entry points after an upgrade.
+public fun migrate(group: &mut Group, cap: &GroupAdminCap) {
+    assert_cap(group, cap);
+    assert!(group.version < rules::current_version(), EAlreadyCurrent);
+    group.version = rules::current_version();
 }
 
 // === Getters ===
@@ -189,6 +209,8 @@ public fun is_banned(group: &Group, account: address): bool {
 }
 
 public fun member_count(group: &Group): u64 { group.member_count }
+
+public fun version(group: &Group): u64 { group.version }
 
 public fun join_rules_id(group: &Group): ID { group.join_rules }
 
@@ -207,6 +229,15 @@ public fun ticket_account(ticket: &JoinTicket): address { ticket.account }
 
 fun assert_cap(group: &Group, cap: &GroupAdminCap) {
     assert!(cap.group == object::id(group), EWrongCap);
+}
+
+fun assert_version(group: &Group) {
+    assert!(group.version == rules::current_version(), EWrongVersion);
+}
+
+#[test_only]
+public fun set_version_for_testing(group: &mut Group, version: u64) {
+    group.version = version;
 }
 
 fun insert_member(group: &mut Group, account: address, clock: &Clock) {

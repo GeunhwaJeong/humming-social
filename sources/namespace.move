@@ -24,12 +24,15 @@ const EWrongCap: u64 = 5;
 const EWrongRuleSet: u64 = 6;
 const EKeyMismatch: u64 = 7;
 const EUsernameStillAssigned: u64 = 8;
+const EWrongVersion: u64 = 9;
+const EAlreadyCurrent: u64 = 10;
 
 /// Operation marker: minting a new username.
 public struct CreateUsernameOp {}
 
 public struct Namespace has key {
     id: UID,
+    version: u64,
     name: String,
     metadata_uri: String,
     /// ID of the shared `RuleSet<CreateUsernameOp>` gating minting.
@@ -99,6 +102,7 @@ public fun create(
     let (set, set_cap) = rules::new<CreateUsernameOp>(ctx);
     let ns = Namespace {
         id: object::new(ctx),
+        version: rules::current_version(),
         name,
         metadata_uri,
         create_rules: object::id(&set),
@@ -120,6 +124,7 @@ public fun request_create_username(
     name: String,
     ctx: &mut TxContext,
 ): (CreateUsernameTicket, Request<CreateUsernameOp>) {
+    assert_version(ns);
     assert_valid_name(&name);
     assert!(!ns.taken.contains(name), ENameTaken);
     let key = ctx.fresh_object_address();
@@ -135,6 +140,7 @@ public fun execute_create_username(
     req: Request<CreateUsernameOp>,
     ctx: &mut TxContext,
 ): Username {
+    assert_version(ns);
     let CreateUsernameTicket { namespace, key, account: _, name } = ticket;
     assert!(namespace == object::id(ns), EWrongNamespace);
     assert!(object::id(set) == ns.create_rules, EWrongRuleSet);
@@ -151,6 +157,7 @@ public fun admin_create_username(
     name: String,
     ctx: &mut TxContext,
 ): Username {
+    assert_version(ns);
     assert!(cap.namespace == object::id(ns), EWrongCap);
     assert_valid_name(&name);
     mint(ns, name, ctx)
@@ -161,6 +168,7 @@ public fun admin_create_username(
 /// Assign the username to the sender. Requires holding the `Username`
 /// object.
 public fun assign(ns: &mut Namespace, username: &Username, ctx: &TxContext) {
+    assert_version(ns);
     assert!(username.namespace == object::id(ns), EWrongNamespace);
     let account = ctx.sender();
     assert!(!ns.username_to_account.contains(username.name), EAlreadyAssigned);
@@ -172,6 +180,7 @@ public fun assign(ns: &mut Namespace, username: &Username, ctx: &TxContext) {
 
 /// Unassign by the account the username is currently assigned to.
 public fun unassign_self(ns: &mut Namespace, ctx: &TxContext) {
+    assert_version(ns);
     let account = ctx.sender();
     assert!(ns.account_to_username.contains(account), ENotAssigned);
     let name = ns.account_to_username.remove(account);
@@ -182,6 +191,7 @@ public fun unassign_self(ns: &mut Namespace, ctx: &TxContext) {
 /// Unassign by whoever holds the `Username` object (e.g. after buying
 /// an assigned username on a marketplace).
 public fun unassign(ns: &mut Namespace, username: &Username) {
+    assert_version(ns);
     assert!(username.namespace == object::id(ns), EWrongNamespace);
     assert!(ns.username_to_account.contains(username.name), ENotAssigned);
     let account = ns.username_to_account.remove(username.name);
@@ -191,6 +201,7 @@ public fun unassign(ns: &mut Namespace, username: &Username) {
 
 /// Burn an unassigned username, freeing the name for re-minting.
 public fun burn(ns: &mut Namespace, username: Username) {
+    assert_version(ns);
     let Username { id, namespace, name } = username;
     assert!(namespace == object::id(ns), EWrongNamespace);
     assert!(!ns.username_to_account.contains(name), EUsernameStillAssigned);
@@ -202,8 +213,17 @@ public fun burn(ns: &mut Namespace, username: Username) {
 // === Admin ===
 
 public fun set_metadata_uri(ns: &mut Namespace, cap: &NamespaceAdminCap, metadata_uri: String) {
+    assert_version(ns);
     assert!(cap.namespace == object::id(ns), EWrongCap);
     ns.metadata_uri = metadata_uri;
+}
+
+/// Bring a namespace created under an older package version up to the
+/// current one, re-enabling its entry points after an upgrade.
+public fun migrate(ns: &mut Namespace, cap: &NamespaceAdminCap) {
+    assert!(cap.namespace == object::id(ns), EWrongCap);
+    assert!(ns.version < rules::current_version(), EAlreadyCurrent);
+    ns.version = rules::current_version();
 }
 
 // === Getters ===
@@ -230,6 +250,8 @@ public fun username_of(ns: &Namespace, account: address): Option<String> {
 
 public fun create_rules_id(ns: &Namespace): ID { ns.create_rules }
 
+public fun version(ns: &Namespace): u64 { ns.version }
+
 public fun username_name(username: &Username): String { username.name }
 
 public fun username_namespace(username: &Username): ID { username.namespace }
@@ -244,6 +266,15 @@ public fun ticket_name(ticket: &CreateUsernameTicket): String { ticket.name }
 
 fun assert_valid_name(name: &String) {
     assert!(name.length() > 0 && name.length() < 256, EInvalidName);
+}
+
+fun assert_version(ns: &Namespace) {
+    assert!(ns.version == rules::current_version(), EWrongVersion);
+}
+
+#[test_only]
+public fun set_version_for_testing(ns: &mut Namespace, version: u64) {
+    ns.version = version;
 }
 
 fun mint(ns: &mut Namespace, name: String, ctx: &mut TxContext): Username {

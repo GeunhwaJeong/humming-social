@@ -22,7 +22,7 @@ sources/
     ├── username_validation_rule.move Length + charset validation
     └── followers_only_rule.move      Followers-only replies
 tests/
-└── humming_tests.move            41 scenario tests (all passing)
+└── humming_tests.move            49 scenario tests (all passing)
 ```
 
 ## Architecture mapping
@@ -226,11 +226,28 @@ a cap cannot administer a foreign rule set; removing a never-added rule
 aborts; and `MAX_RULES` counts required + any-of together (a test-only
 `FillerRule<phantom T>` witness supplies 21 distinct rule identities).
 
+### 9. Shared-object versioning (pre-publish deadline)
+
+Published package versions stay callable forever: after an upgrade
+fixes a bug, nothing stops clients from keeping their writes on the old
+code — unless the shared objects themselves refuse it. Every shared
+object (`Namespace`, `Graph`, `Feed`, `Group`, `RuleSet`) now carries a
+`version: u64`, checked at the top of every mutating entry point and
+interaction start. The constant lives in one place (`rules::VERSION`,
+read by the primitives via `current_version()`), so a single bump in an
+upgrade bricks all stale writes at once; each object's admin then runs
+`migrate` (cap-gated, rejects same-version calls) to re-enable it.
+Struct layouts cannot change after publish, which is why the field had
+to land now. Rule-set read/stamp paths are deliberately not gated:
+stamps only matter to `confirm`, which primitives reach behind their
+own version gates. Eight tests (41 → 49) pin the gate on every object
+type and the migrate round-trip.
+
 ## Build & test
 
 ```bash
 haneul move build
-haneul move test   # 41 tests
+haneul move test   # 49 tests
 ```
 
 ## License

@@ -33,6 +33,8 @@ const ERepostCannotReference: u64 = 8;
 const ECannotEditRepost: u64 = 9;
 const EPostAlreadyGated: u64 = 10;
 const EWrongCap: u64 = 11;
+const EWrongVersion: u64 = 12;
+const EAlreadyCurrent: u64 = 13;
 
 /// Operation marker: creating a post on the feed.
 public struct CreatePostOp {}
@@ -59,6 +61,7 @@ public struct Post has copy, drop, store {
 
 public struct Feed has key {
     id: UID,
+    version: u64,
     metadata_uri: String,
     /// ID of the shared feed-level `RuleSet<CreatePostOp>`.
     feed_rules: ID,
@@ -124,6 +127,7 @@ public fun create(metadata_uri: String, ctx: &mut TxContext): (FeedAdminCap, Rul
     let (set, set_cap) = rules::new<CreatePostOp>(ctx);
     let feed = Feed {
         id: object::new(ctx),
+        version: rules::current_version(),
         metadata_uri,
         feed_rules: object::id(&set),
         posts: table::new(ctx),
@@ -148,6 +152,7 @@ public fun request_create_post(
     reposted: Option<u64>,
     ctx: &mut TxContext,
 ): (CreatePostTicket, Request<CreatePostOp>) {
+    assert_version(feed);
     let author = ctx.sender();
     if (reposted.is_some()) {
         // Mirrors Lens V3: a repost carries no content of its own and
@@ -233,6 +238,7 @@ public fun edit_post(
     clock: &Clock,
     ctx: &TxContext,
 ) {
+    assert_version(feed);
     assert_live_post(feed, post_id);
     let post = feed.posts.borrow_mut(post_id);
     assert!(post.author == ctx.sender(), ENotAuthor);
@@ -243,6 +249,7 @@ public fun edit_post(
 }
 
 public fun delete_post(feed: &mut Feed, post_id: u64, ctx: &TxContext) {
+    assert_version(feed);
     assert_live_post(feed, post_id);
     let post = feed.posts.borrow_mut(post_id);
     assert!(post.author == ctx.sender(), ENotAuthor);
@@ -256,6 +263,7 @@ public fun delete_post(feed: &mut Feed, post_id: u64, ctx: &TxContext) {
 /// Gate replies to one of your posts: creates and registers the post's
 /// reply rule set, returning the cap to configure it.
 public fun create_post_rules(feed: &mut Feed, post_id: u64, ctx: &mut TxContext): RuleSetCap {
+    assert_version(feed);
     assert_live_post(feed, post_id);
     assert!(feed.posts.borrow(post_id).author == ctx.sender(), ENotAuthor);
     assert!(!feed.post_rules.contains(post_id), EPostAlreadyGated);
@@ -269,8 +277,17 @@ public fun create_post_rules(feed: &mut Feed, post_id: u64, ctx: &mut TxContext)
 // === Admin ===
 
 public fun set_metadata_uri(feed: &mut Feed, cap: &FeedAdminCap, metadata_uri: String) {
+    assert_version(feed);
     assert!(cap.feed == object::id(feed), EWrongCap);
     feed.metadata_uri = metadata_uri;
+}
+
+/// Bring a feed created under an older package version up to the
+/// current one, re-enabling its entry points after an upgrade.
+public fun migrate(feed: &mut Feed, cap: &FeedAdminCap) {
+    assert!(cap.feed == object::id(feed), EWrongCap);
+    assert!(feed.version < rules::current_version(), EAlreadyCurrent);
+    feed.version = rules::current_version();
 }
 
 // === Getters ===
@@ -287,6 +304,8 @@ public fun post(feed: &Feed, post_id: u64): Post {
 public fun post_count(feed: &Feed): u64 { feed.post_count }
 
 public fun feed_rules_id(feed: &Feed): ID { feed.feed_rules }
+
+public fun version(feed: &Feed): u64 { feed.version }
 
 public fun post_rules_of(feed: &Feed, post_id: u64): Option<ID> {
     if (feed.post_rules.contains(post_id)) {
@@ -330,6 +349,7 @@ fun check_common(
     ticket: &CreatePostTicket,
     req_key: address,
 ) {
+    assert_version(feed);
     assert!(ticket.feed == object::id(feed), EWrongFeed);
     assert!(object::id(feed_rules) == feed.feed_rules, EWrongRuleSet);
     assert!(ticket.key == req_key, EKeyMismatch);
@@ -337,6 +357,15 @@ fun check_common(
 
 fun assert_live_post(feed: &Feed, post_id: u64) {
     assert!(post_exists(feed, post_id), EPostNotFound);
+}
+
+fun assert_version(feed: &Feed) {
+    assert!(feed.version == rules::current_version(), EWrongVersion);
+}
+
+#[test_only]
+public fun set_version_for_testing(feed: &mut Feed, version: u64) {
+    feed.version = version;
 }
 
 fun insert_post(feed: &mut Feed, ticket: CreatePostTicket, clock: &Clock): u64 {

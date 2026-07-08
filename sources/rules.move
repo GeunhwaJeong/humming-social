@@ -37,14 +37,26 @@ const ERequiredRuleNotSatisfied: u64 = 2;
 const EAnyOfRuleNotSatisfied: u64 = 3;
 const ETooManyRules: u64 = 4;
 const EWrongCap: u64 = 5;
+const EWrongVersion: u64 = 6;
+const EAlreadyCurrent: u64 = 7;
 
 /// Mirrors MAX_AMOUNT_OF_RULES in Lens V3.
 const MAX_RULES: u64 = 20;
+
+/// Version stamped on every shared object of the package (primitives
+/// read it via `current_version`, so one bump moves the whole package
+/// in lockstep). Mutating entry points reject objects stamped with a
+/// different version; after an upgrade bumps this constant, admins run
+/// their object's `migrate` to re-enable it. This is what makes
+/// retiring an old package version *enforceable* — published versions
+/// stay callable forever, but their writes abort here.
+const VERSION: u64 = 1;
 
 /// A set of rules gating one operation `OP` of one primitive instance.
 /// Shared object; mutation is gated by the matching `RuleSetCap`.
 public struct RuleSet<phantom OP> has key, store {
     id: UID,
+    version: u64,
     required: VecSet<TypeName>,
     any_of: VecSet<TypeName>,
     /// Per-rule configuration, keyed by the rule witness type name.
@@ -81,6 +93,7 @@ public struct Request<phantom OP> {
 public(package) fun new<OP>(ctx: &mut TxContext): (RuleSet<OP>, RuleSetCap) {
     let set = RuleSet<OP> {
         id: object::new(ctx),
+        version: VERSION,
         required: vec_set::empty(),
         any_of: vec_set::empty(),
         configs: bag::new(ctx),
@@ -143,6 +156,7 @@ public fun add<OP, R: drop, C: store>(
     config: C,
     required: bool,
 ) {
+    assert_version(set);
     assert!(cap.set == object::id(set), EWrongCap);
     let rule = type_name::with_defining_ids<R>();
     assert!(!set.required.contains(&rule) && !set.any_of.contains(&rule), ERuleAlreadyAdded);
@@ -157,6 +171,7 @@ public fun add<OP, R: drop, C: store>(
 
 /// Remove a rule and return its config for the rule module to unpack.
 public fun remove<OP, R: drop, C: store>(set: &mut RuleSet<OP>, cap: &RuleSetCap): C {
+    assert_version(set);
     assert!(cap.set == object::id(set), EWrongCap);
     let rule = type_name::with_defining_ids<R>();
     if (set.required.contains(&rule)) {
@@ -203,3 +218,29 @@ public fun has_approval<OP, R: drop>(set: &RuleSet<OP>, req: &Request<OP>): bool
 public fun request_key<OP>(req: &Request<OP>): address { req.key }
 
 public fun request_account<OP>(req: &Request<OP>): address { req.account }
+
+// === Versioning ===
+
+/// Bring a rule set created under an older package version up to the
+/// current one, re-enabling its administration after an upgrade.
+public fun migrate<OP>(set: &mut RuleSet<OP>, cap: &RuleSetCap) {
+    assert!(cap.set == object::id(set), EWrongCap);
+    assert!(set.version < VERSION, EAlreadyCurrent);
+    set.version = VERSION;
+}
+
+public fun current_version(): u64 { VERSION }
+
+public fun version<OP>(set: &RuleSet<OP>): u64 { set.version }
+
+/// Only the mutating entry points are gated. Read/stamp paths stay
+/// open on purpose: stamps only matter to `confirm`, which primitives
+/// reach behind their own version gates.
+fun assert_version<OP>(set: &RuleSet<OP>) {
+    assert!(set.version == VERSION, EWrongVersion);
+}
+
+#[test_only]
+public fun set_version_for_testing<OP>(set: &mut RuleSet<OP>, version: u64) {
+    set.version = version;
+}

@@ -29,6 +29,8 @@ const ETargetHasNoRules: u64 = 7;
 const EWrongCap: u64 = 8;
 const EAlreadyHasRuleSet: u64 = 9;
 const ENoRuleSet: u64 = 10;
+const EWrongVersion: u64 = 11;
+const EAlreadyCurrent: u64 = 12;
 
 /// Operation marker: following an account.
 public struct FollowOp {}
@@ -39,6 +41,7 @@ public struct Follow has drop, store {
 
 public struct Graph has key {
     id: UID,
+    version: u64,
     metadata_uri: String,
     /// ID of the shared graph-level `RuleSet<FollowOp>`.
     graph_rules: ID,
@@ -94,6 +97,7 @@ public fun create(metadata_uri: String, ctx: &mut TxContext): (GraphAdminCap, Ru
     let (set, set_cap) = rules::new<FollowOp>(ctx);
     let graph = Graph {
         id: object::new(ctx),
+        version: rules::current_version(),
         metadata_uri,
         graph_rules: object::id(&set),
         following: table::new(ctx),
@@ -114,6 +118,7 @@ public fun create(metadata_uri: String, ctx: &mut TxContext): (GraphAdminCap, Ru
 /// want to gate follows on themselves (e.g. paid follows) call this
 /// once, then configure rules on the shared set using the returned cap.
 public fun create_my_follow_rules(graph: &mut Graph, ctx: &mut TxContext): RuleSetCap {
+    assert_version(graph);
     let account = ctx.sender();
     assert!(!graph.account_rules.contains(account), EAlreadyHasRuleSet);
     let (set, set_cap) = rules::new<FollowOp>(ctx);
@@ -130,6 +135,7 @@ public fun create_my_follow_rules(graph: &mut Graph, ctx: &mut TxContext): RuleS
 /// Unregister the sender's follow rules. The shared rule set object
 /// remains but is no longer consulted.
 public fun remove_my_follow_rules(graph: &mut Graph, ctx: &TxContext) {
+    assert_version(graph);
     let account = ctx.sender();
     assert!(graph.account_rules.contains(account), ENoRuleSet);
     graph.account_rules.remove(account);
@@ -143,6 +149,7 @@ public fun request_follow(
     target: address,
     ctx: &mut TxContext,
 ): (FollowTicket, Request<FollowOp>) {
+    assert_version(graph);
     let follower = ctx.sender();
     assert!(follower != target, ECannotFollowSelf);
     assert!(!is_following(graph, follower, target), EAlreadyFollowing);
@@ -160,6 +167,7 @@ public fun execute_follow(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
+    assert_version(graph);
     let FollowTicket { graph: graph_id, key, follower, target } = ticket;
     assert!(graph_id == object::id(graph), EWrongGraph);
     assert!(object::id(graph_rules) == graph.graph_rules, EWrongRuleSet);
@@ -180,6 +188,7 @@ public fun execute_follow_gated(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
+    assert_version(graph);
     let FollowTicket { graph: graph_id, key, follower, target } = ticket;
     assert!(graph_id == object::id(graph), EWrongGraph);
     assert!(object::id(graph_rules) == graph.graph_rules, EWrongRuleSet);
@@ -193,6 +202,7 @@ public fun execute_follow_gated(
 }
 
 public fun unfollow(graph: &mut Graph, target: address, ctx: &TxContext) {
+    assert_version(graph);
     let follower = ctx.sender();
     assert!(is_following(graph, follower, target), ENotFollowing);
     graph.following.borrow_mut(follower).remove(target);
@@ -204,8 +214,17 @@ public fun unfollow(graph: &mut Graph, target: address, ctx: &TxContext) {
 // === Admin ===
 
 public fun set_metadata_uri(graph: &mut Graph, cap: &GraphAdminCap, metadata_uri: String) {
+    assert_version(graph);
     assert!(cap.graph == object::id(graph), EWrongCap);
     graph.metadata_uri = metadata_uri;
+}
+
+/// Bring a graph created under an older package version up to the
+/// current one, re-enabling its entry points after an upgrade.
+public fun migrate(graph: &mut Graph, cap: &GraphAdminCap) {
+    assert!(cap.graph == object::id(graph), EWrongCap);
+    assert!(graph.version < rules::current_version(), EAlreadyCurrent);
+    graph.version = rules::current_version();
 }
 
 // === Getters ===
@@ -231,6 +250,8 @@ public fun following_count_of(graph: &Graph, account: address): u64 {
 }
 
 public fun graph_rules_id(graph: &Graph): ID { graph.graph_rules }
+
+public fun version(graph: &Graph): u64 { graph.version }
 
 public fun follow_rules_of(graph: &Graph, account: address): Option<ID> {
     if (graph.account_rules.contains(account)) {
@@ -275,4 +296,13 @@ fun increment(counts: &mut Table<address, u64>, account: address) {
 fun decrement(counts: &mut Table<address, u64>, account: address) {
     let count = counts.borrow_mut(account);
     *count = *count - 1;
+}
+
+fun assert_version(graph: &Graph) {
+    assert!(graph.version == rules::current_version(), EWrongVersion);
+}
+
+#[test_only]
+public fun set_version_for_testing(graph: &mut Graph, version: u64) {
+    graph.version = version;
 }
