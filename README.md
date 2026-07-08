@@ -8,6 +8,7 @@ object model.
 
 ```
 sources/
+├── humming.move        Package init: Publisher, Display, TransferPolicy for Username
 ├── rules.move          Rule framework (hot-potato receipts, RuleSet objects)
 ├── namespace.move      Username registry + transferable Username objects
 ├── graph.move          Follow graph (graph-level + per-account follow rules)
@@ -21,7 +22,7 @@ sources/
     ├── username_validation_rule.move Length + charset validation
     └── followers_only_rule.move      Followers-only replies
 tests/
-└── humming_tests.move            31 scenario tests (all passing)
+└── humming_tests.move            33 scenario tests (all passing)
 ```
 
 ## Architecture mapping
@@ -194,11 +195,30 @@ enforced; an assigned username cannot be burned; a username buyer can
 unassign and reassign; deleting a post clears content; locked-token
 join, early-withdraw rejection, and insufficient-lock rejection.
 
+### 7. Package init: `Publisher`, `Display`, `TransferPolicy` (review finding)
+
+The package had no one-time witness, which quietly forecloses the
+product story around usernames: without an OTW there is no
+`Publisher`, without a `Publisher` there is no `Display<Username>`
+(wallets render the "tradeable name" as a bare object id) and no
+`TransferPolicy<Username>` (kiosk-based marketplaces refuse to trade
+the type at all). And publish time is the only chance to get an OTW —
+recovering one later means shipping a new module in an upgrade.
+
+`humming.move` now claims the `Publisher` in `init`, creates a
+`Display<Username>` rendering `@{name}` (updatable later through the
+owned `Display` object, e.g. to add an `image_url`), and shares an
+empty `TransferPolicy<Username>` — free trading now, royalty rules
+addable later with the retained cap. Two tests pin it (31 → 33): the
+init artifacts land where they should, and a full kiosk cycle —
+rule-gated mint → list → purchase through the shared policy → seller
+withdraws proceeds.
+
 ## Build & test
 
 ```bash
 haneul move build
-haneul move test   # 31 tests
+haneul move test   # 33 tests
 ```
 
 ## License
