@@ -6,12 +6,15 @@
 ///
 /// Generic over the operation `OP` and the payment coin type `T`, so
 /// the same module gates follows, joins, or posts in any currency.
+/// Payments run through `humming::platform`, which splits the
+/// platform's cut off before the remainder reaches the recipient
+/// (the same shape as Lens V3's treasury fee inside payment rules).
 module humming::simple_payment_rule;
 
+use humming::platform::{Self, FeeConfig};
 use humming::rules::{Self, Request, RuleSet, RuleSetCap};
 use haneul::coin::Coin;
 
-const EInsufficientPayment: u64 = 0;
 const EAlreadyPaid: u64 = 1;
 
 public struct SimplePaymentRule has drop {}
@@ -38,20 +41,20 @@ public fun remove<OP, T>(set: &mut RuleSet<OP>, cap: &RuleSetCap) {
     );
 }
 
-/// Pay the configured fee and stamp the request. The exact fee is
-/// split off `payment`, so callers can pass any coin holding at least
-/// the fee and keep the change. Paying the same rule set twice for one
-/// request aborts rather than taking a second payment.
+/// Pay the configured amount and stamp the request. The exact amount
+/// is split off `payment`, so callers can pass any coin holding at
+/// least that much and keep the change. Paying the same rule set twice
+/// for one request aborts rather than taking a second payment.
 public fun pay<OP, T>(
     set: &RuleSet<OP>,
+    fee_config: &FeeConfig,
     req: &mut Request<OP>,
     payment: &mut Coin<T>,
     ctx: &mut TxContext,
 ) {
     assert!(!rules::has_approval<OP, SimplePaymentRule>(set, req), EAlreadyPaid);
     let config = rules::config<OP, SimplePaymentRule, Config<T>>(set);
-    assert!(payment.value() >= config.amount, EInsufficientPayment);
-    transfer::public_transfer(payment.split(config.amount, ctx), config.recipient);
+    platform::collect(fee_config, payment, config.amount, config.recipient, ctx);
     rules::add_approval(SimplePaymentRule {}, set, req);
 }
 

@@ -8,21 +8,25 @@ object model.
 
 ```
 sources/
-├── humming.move        Package init: Publisher, Display, TransferPolicy for Username
+├── humming.move        Package init: Publisher, Display, TransferPolicy, FeeConfig
+├── platform.move       Platform fee: one canonical lever, 10% hard ceiling
 ├── rules.move          Rule framework (hot-potato receipts, RuleSet objects)
 ├── namespace.move      Username registry + transferable Username objects
 ├── graph.move          Follow graph (graph-level + per-account follow rules)
 ├── feed.move           Posts: reply / quote / repost, per-post reply rules
 ├── group.move          Memberships, admin management, bans
 ├── profile.move        Optional profile metadata object
+├── subscriptions.move  Prepaid extendable subscriptions (the Patreon primitive)
+├── paid_posts.move     Per-post paywalls (pay once to unlock)
 └── rule_impls/
     ├── simple_payment_rule.move      Paid follow/join/post (any coin type)
     ├── token_gated_rule.move         Token-gated interactions (point-in-time)
     ├── locked_token_rule.move        Flash-proof token gate (time-locked, soulbound)
     ├── username_validation_rule.move Length + charset validation
-    └── followers_only_rule.move      Followers-only replies
+    ├── followers_only_rule.move      Followers-only replies
+    └── subscriber_only_rule.move     Active-subscriber-only interactions
 tests/
-└── humming_tests.move            49 scenario tests (all passing)
+└── humming_tests.move            62 scenario tests (all passing)
 ```
 
 ## Architecture mapping
@@ -243,11 +247,50 @@ stamps only matter to `confirm`, which primitives reach behind their
 own version gates. Eight tests (41 → 49) pin the gate on every object
 type and the migrate round-trip.
 
+### 10. Monetization layer: platform fee, subscriptions, paid posts
+
+Three modules turn the social primitives into a creator-monetization
+protocol. All of them keep the package's division of labor: the chain
+records *who paid for what*; the app decides what that access renders.
+
+- **`platform`** — the single fee lever. `new` is package-internal and
+  called once from `init`, so a `&FeeConfig` parameter can only ever
+  be the canonical object: a zero-fee lookalike cannot be wired into a
+  payment path. `MAX_FEE_BPS` (10%) is a compile-time ceiling no cap
+  holder can cross — creators price against a bounded worst case, not
+  an announcement. The launch fee is 5%; the plan is to walk it down,
+  and because the lever is an ordinary transferable `FeeConfigCap`,
+  handing it to a governance contract later is a transfer, not an
+  upgrade. Fee math uses a u128 intermediate (u64 `amount * bps`
+  overflows well inside the coin supply) and floors in the creator's
+  favor.
+- **`subscriptions`** — the Patreon primitive. An object chain has no
+  pull payments, so a "recurring" subscription is a prepaid,
+  extendable expiry: paying extends an active subscription from its
+  expiry (periods stack), a lapsed one restarts from now, and lapsing
+  itself needs no transaction at all. `subscriber_only_rule` bridges
+  tiers into the rule framework (subscriber-only replies, follows,
+  joins). Anyone can pay for any beneficiary — gift subscriptions
+  come free with the design.
+- **`paid_posts`** — per-post paywalls. A paywall cannot withhold
+  bytes (`content_uri` is public state); it is the canonical purchase
+  record the app serves full content against. One paywall per post,
+  enforced by a registry in the `Feed`; the paywall itself is a
+  per-post shared object, so purchases of different posts never
+  contend. Reposts cannot be paywalled (no content of their own), and
+  deleted posts stop selling.
+
+`simple_payment_rule` now routes through `platform::collect` as well —
+the same shape as Lens V3's treasury fee inside its payment rules.
+Thirteen tests (49 → 62) pin the fee split on every path, the ceiling,
+the walk-to-zero flow, subscription stacking/lapse/re-subscribe/gift,
+the subscriber-gated reply E2E, and every paywall error path.
+
 ## Build & test
 
 ```bash
 haneul move build
-haneul move test   # 49 tests
+haneul move test   # 62 tests
 ```
 
 ## License

@@ -11,9 +11,13 @@ use humming::group::{Self, Group, JoinGroupOp};
 use humming::humming::init_for_testing;
 use humming::locked_token_rule::{Self, Lock};
 use humming::namespace::{Self, CreateUsernameOp, Namespace, Username};
+use humming::paid_posts::{Self, PostPaywall};
+use humming::platform::{Self, FeeConfig, FeeConfigCap};
 use humming::profile::{Self, Profile};
 use humming::rules::{Self, RuleSet, RuleSetCap};
 use humming::simple_payment_rule;
+use humming::subscriber_only_rule;
+use humming::subscriptions::{Self, Tier, TierCap};
 use humming::token_gated_rule;
 use humming::username_validation_rule;
 use std::string::{Self, String};
@@ -41,6 +45,14 @@ public struct FillerRule<phantom T> has drop {}
 
 fun new_clock(s: &mut Scenario): Clock {
     clock::create_for_testing(s.ctx())
+}
+
+/// Runs the package initializer, creating (among the rest) the
+/// canonical `FeeConfig` at 5% with ADMIN as treasury. Needed by any
+/// test that moves money.
+fun setup_platform(s: &mut Scenario) {
+    s.next_tx(ADMIN);
+    init_for_testing(s.ctx());
 }
 
 // === Namespace ===
@@ -236,6 +248,7 @@ fun graph_follow_unfollow() {
 fun graph_paid_follow() {
     let mut s = ts::begin(ADMIN);
     setup_graph(&mut s);
+    setup_platform(&mut s);
     let clock = new_clock(&mut s);
 
     // Bob gates follows on himself: 1000 GEUNHWA to follow.
@@ -262,28 +275,38 @@ fun graph_paid_follow() {
     s.next_tx(ALICE);
     {
         let mut g = s.take_shared<Graph>();
+        let fee_config = s.take_shared<FeeConfig>();
         let graph_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, graph::graph_rules_id(&g));
         let bob_set_id = graph::follow_rules_of(&g, BOB).destroy_some();
         let bob_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, bob_set_id);
-        // Pays with a larger coin: the fee is split off, change stays.
+        // Pays with a larger coin: the amount is split off, change stays.
         let mut payment = coin::mint_for_testing<HANEUL>(1500, s.ctx());
         let (ticket, mut req) = graph::request_follow(&g, BOB, s.ctx());
-        simple_payment_rule::pay(&bob_set, &mut req, &mut payment, s.ctx());
+        simple_payment_rule::pay(&bob_set, &fee_config, &mut req, &mut payment, s.ctx());
         assert!(payment.value() == 500);
         graph::execute_follow_gated(&mut g, &graph_set, &bob_set, ticket, req, &clock, s.ctx());
         assert!(graph::is_following(&g, ALICE, BOB));
         payment.burn_for_testing();
         ts::return_shared(g);
+        ts::return_shared(fee_config);
         ts::return_shared(graph_set);
         ts::return_shared(bob_set);
     };
 
-    // Bob received the payment.
+    // Bob received the payment minus the 5% platform cut.
     s.next_tx(BOB);
     {
         let payment = s.take_from_sender<Coin<HANEUL>>();
-        assert!(payment.value() == 1000);
+        assert!(payment.value() == 950);
         s.return_to_sender(payment);
+    };
+
+    // The treasury (ADMIN) received the cut.
+    s.next_tx(ADMIN);
+    {
+        let cut = s.take_from_sender<Coin<HANEUL>>();
+        assert!(cut.value() == 50);
+        s.return_to_sender(cut);
     };
 
     clock.destroy_for_testing();
@@ -291,10 +314,11 @@ fun graph_paid_follow() {
 }
 
 #[test]
-#[expected_failure(abort_code = 0, location = humming::simple_payment_rule)]
+#[expected_failure(abort_code = 2, location = humming::platform)]
 fun graph_paid_follow_wrong_amount() {
     let mut s = ts::begin(ADMIN);
     setup_graph(&mut s);
+    setup_platform(&mut s);
     let clock = new_clock(&mut s);
 
     s.next_tx(BOB);
@@ -319,15 +343,17 @@ fun graph_paid_follow_wrong_amount() {
     // Underpaying must abort.
     s.next_tx(ALICE);
     let mut g = s.take_shared<Graph>();
+    let fee_config = s.take_shared<FeeConfig>();
     let graph_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, graph::graph_rules_id(&g));
     let bob_set_id = graph::follow_rules_of(&g, BOB).destroy_some();
     let bob_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, bob_set_id);
     let mut payment = coin::mint_for_testing<HANEUL>(999, s.ctx());
     let (ticket, mut req) = graph::request_follow(&g, BOB, s.ctx());
-    simple_payment_rule::pay(&bob_set, &mut req, &mut payment, s.ctx());
+    simple_payment_rule::pay(&bob_set, &fee_config, &mut req, &mut payment, s.ctx());
     graph::execute_follow_gated(&mut g, &graph_set, &bob_set, ticket, req, &clock, s.ctx());
     payment.burn_for_testing();
     ts::return_shared(g);
+    ts::return_shared(fee_config);
     ts::return_shared(graph_set);
     ts::return_shared(bob_set);
     clock.destroy_for_testing();
@@ -830,6 +856,7 @@ fun setup_paid_follow(s: &mut Scenario, account: address, amount: u64) {
 fun graph_double_pay_aborts() {
     let mut s = ts::begin(ADMIN);
     setup_graph(&mut s);
+    setup_platform(&mut s);
     let clock = new_clock(&mut s);
     setup_paid_follow(&mut s, BOB, 1000);
 
@@ -837,16 +864,18 @@ fun graph_double_pay_aborts() {
     // silently take a second payment.
     s.next_tx(ALICE);
     let mut g = s.take_shared<Graph>();
+    let fee_config = s.take_shared<FeeConfig>();
     let graph_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, graph::graph_rules_id(&g));
     let bob_set_id = graph::follow_rules_of(&g, BOB).destroy_some();
     let bob_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, bob_set_id);
     let mut payment = coin::mint_for_testing<HANEUL>(3000, s.ctx());
     let (ticket, mut req) = graph::request_follow(&g, BOB, s.ctx());
-    simple_payment_rule::pay(&bob_set, &mut req, &mut payment, s.ctx());
-    simple_payment_rule::pay(&bob_set, &mut req, &mut payment, s.ctx());
+    simple_payment_rule::pay(&bob_set, &fee_config, &mut req, &mut payment, s.ctx());
+    simple_payment_rule::pay(&bob_set, &fee_config, &mut req, &mut payment, s.ctx());
     graph::execute_follow_gated(&mut g, &graph_set, &bob_set, ticket, req, &clock, s.ctx());
     payment.burn_for_testing();
     ts::return_shared(g);
+    ts::return_shared(fee_config);
     ts::return_shared(graph_set);
     ts::return_shared(bob_set);
     clock.destroy_for_testing();
@@ -858,6 +887,7 @@ fun graph_double_pay_aborts() {
 fun graph_stamp_cannot_replay_across_rule_sets() {
     let mut s = ts::begin(ADMIN);
     setup_graph(&mut s);
+    setup_platform(&mut s);
     let clock = new_clock(&mut s);
     // Carol charges 10, Bob charges 1000.
     setup_paid_follow(&mut s, CAROL, 10);
@@ -868,6 +898,7 @@ fun graph_stamp_cannot_replay_across_rule_sets() {
     // required payment rule reads as unsatisfied.
     s.next_tx(ALICE);
     let mut g = s.take_shared<Graph>();
+    let fee_config = s.take_shared<FeeConfig>();
     let graph_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, graph::graph_rules_id(&g));
     let carol_set_id = graph::follow_rules_of(&g, CAROL).destroy_some();
     let carol_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, carol_set_id);
@@ -875,10 +906,11 @@ fun graph_stamp_cannot_replay_across_rule_sets() {
     let bob_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, bob_set_id);
     let mut payment = coin::mint_for_testing<HANEUL>(10, s.ctx());
     let (ticket, mut req) = graph::request_follow(&g, BOB, s.ctx());
-    simple_payment_rule::pay(&carol_set, &mut req, &mut payment, s.ctx());
+    simple_payment_rule::pay(&carol_set, &fee_config, &mut req, &mut payment, s.ctx());
     graph::execute_follow_gated(&mut g, &graph_set, &bob_set, ticket, req, &clock, s.ctx());
     payment.burn_for_testing();
     ts::return_shared(g);
+    ts::return_shared(fee_config);
     ts::return_shared(graph_set);
     ts::return_shared(carol_set);
     ts::return_shared(bob_set);
@@ -998,20 +1030,23 @@ fun setup_any_of_group(s: &mut Scenario) {
 fun group_any_of_either_rule_admits() {
     let mut s = ts::begin(ADMIN);
     setup_any_of_group(&mut s);
+    setup_platform(&mut s);
     let clock = new_clock(&mut s);
 
     // Alice pays; she never proves the token rule.
     s.next_tx(ALICE);
     {
         let mut g = s.take_shared<Group>();
+        let fee_config = s.take_shared<FeeConfig>();
         let set = s.take_shared<RuleSet<JoinGroupOp>>();
         let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
         let (ticket, mut req) = group::request_join(&g, s.ctx());
-        simple_payment_rule::pay(&set, &mut req, &mut payment, s.ctx());
+        simple_payment_rule::pay(&set, &fee_config, &mut req, &mut payment, s.ctx());
         group::execute_join(&mut g, &set, ticket, req, &clock);
         assert!(group::is_member(&g, ALICE));
         payment.destroy_zero();
         ts::return_shared(g);
+        ts::return_shared(fee_config);
         ts::return_shared(set);
     };
 
@@ -1094,6 +1129,7 @@ fun group_required_stamp_does_not_count_as_any_of() {
 fun group_any_of_stamp_does_not_count_as_required() {
     let mut s = ts::begin(ADMIN);
     setup_group(&mut s);
+    setup_platform(&mut s);
     let clock = new_clock(&mut s);
 
     s.next_tx(ADMIN);
@@ -1109,13 +1145,15 @@ fun group_any_of_stamp_does_not_count_as_required() {
     // Alice pays (any-of) but never proves the required token rule.
     s.next_tx(ALICE);
     let mut g = s.take_shared<Group>();
+    let fee_config = s.take_shared<FeeConfig>();
     let set = s.take_shared<RuleSet<JoinGroupOp>>();
     let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
     let (ticket, mut req) = group::request_join(&g, s.ctx());
-    simple_payment_rule::pay(&set, &mut req, &mut payment, s.ctx());
+    simple_payment_rule::pay(&set, &fee_config, &mut req, &mut payment, s.ctx());
     group::execute_join(&mut g, &set, ticket, req, &clock);
     payment.destroy_zero();
     ts::return_shared(g);
+    ts::return_shared(fee_config);
     ts::return_shared(set);
     clock.destroy_for_testing();
     s.end();
@@ -1577,9 +1615,17 @@ fun init_creates_publisher_display_and_policy() {
         // The policy is shared (kiosks need it at purchase time); its
         // cap stays with the deployer for adding rules later.
         let policy = s.take_shared<TransferPolicy<Username>>();
+        // The canonical fee config: 5% launch fee, deployer treasury,
+        // lever with the deployer.
+        let fee_config = s.take_shared<FeeConfig>();
+        assert!(platform::fee_bps(&fee_config) == 500);
+        assert!(platform::treasury(&fee_config) == ADMIN);
+        let fee_cap = s.take_from_sender<FeeConfigCap>();
         s.return_to_sender(publisher);
         s.return_to_sender(display);
+        s.return_to_sender(fee_cap);
         ts::return_shared(policy);
+        ts::return_shared(fee_config);
     };
 
     s.end();
@@ -1640,6 +1686,538 @@ fun username_kiosk_trade() {
         ts::return_shared(k);
     };
 
+    s.end();
+}
+
+// === Monetization: platform fee, subscriptions, paid posts ===
+
+#[test]
+fun subscription_lifecycle() {
+    let mut s = ts::begin(ADMIN);
+    setup_platform(&mut s);
+    let mut clock = new_clock(&mut s);
+
+    // Bob offers a tier: 1000 per day.
+    s.next_tx(BOB);
+    {
+        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b"ipfs://tier"), s.ctx());
+        transfer::public_transfer(cap, BOB);
+    };
+
+    // Alice subscribes, then immediately renews: periods stack.
+    s.next_tx(ALICE);
+    {
+        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let fee_config = s.take_shared<FeeConfig>();
+        let mut payment = coin::mint_for_testing<HANEUL>(2000, s.ctx());
+        subscriptions::subscribe(&mut tier, &fee_config, ALICE, &mut payment, &clock, s.ctx());
+        assert!(subscriptions::is_active_subscriber(&tier, ALICE, &clock));
+        assert!(subscriptions::expires_ms(&tier, ALICE).destroy_some() == DAY_MS);
+        subscriptions::subscribe(&mut tier, &fee_config, ALICE, &mut payment, &clock, s.ctx());
+        assert!(subscriptions::expires_ms(&tier, ALICE).destroy_some() == 2 * DAY_MS);
+        assert!(subscriptions::subscriber_count(&tier) == 1);
+        payment.destroy_zero();
+        ts::return_shared(tier);
+        ts::return_shared(fee_config);
+    };
+
+    // Bob received 950 per period (5% platform cut).
+    s.next_tx(BOB);
+    {
+        let c1 = s.take_from_sender<Coin<HANEUL>>();
+        let c2 = s.take_from_sender<Coin<HANEUL>>();
+        assert!(c1.value() + c2.value() == 1900);
+        s.return_to_sender(c1);
+        s.return_to_sender(c2);
+    };
+
+    // Past the prepaid time the subscription lapses by itself...
+    s.next_tx(ALICE);
+    {
+        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let fee_config = s.take_shared<FeeConfig>();
+        clock.set_for_testing(2 * DAY_MS + 1);
+        assert!(!subscriptions::is_active_subscriber(&tier, ALICE, &clock));
+        // ...and re-subscribing starts from now, not the stale expiry.
+        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        subscriptions::subscribe(&mut tier, &fee_config, ALICE, &mut payment, &clock, s.ctx());
+        assert!(subscriptions::expires_ms(&tier, ALICE).destroy_some() == 3 * DAY_MS + 1);
+        assert!(subscriptions::subscriber_count(&tier) == 1);
+        payment.destroy_zero();
+        ts::return_shared(tier);
+        ts::return_shared(fee_config);
+    };
+
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+fun subscription_gift() {
+    let mut s = ts::begin(ADMIN);
+    setup_platform(&mut s);
+    let clock = new_clock(&mut s);
+
+    s.next_tx(BOB);
+    {
+        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        transfer::public_transfer(cap, BOB);
+    };
+
+    // Alice pays; Carol gets the subscription.
+    s.next_tx(ALICE);
+    {
+        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let fee_config = s.take_shared<FeeConfig>();
+        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        subscriptions::subscribe(&mut tier, &fee_config, CAROL, &mut payment, &clock, s.ctx());
+        assert!(subscriptions::is_active_subscriber(&tier, CAROL, &clock));
+        assert!(!subscriptions::is_active_subscriber(&tier, ALICE, &clock));
+        payment.destroy_zero();
+        ts::return_shared(tier);
+        ts::return_shared(fee_config);
+    };
+
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 0, location = humming::subscriptions)]
+fun subscription_closed_tier_rejects() {
+    let mut s = ts::begin(ADMIN);
+    setup_platform(&mut s);
+    let clock = new_clock(&mut s);
+
+    s.next_tx(BOB);
+    {
+        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        transfer::public_transfer(cap, BOB);
+    };
+    s.next_tx(BOB);
+    {
+        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let cap = s.take_from_sender<TierCap>();
+        subscriptions::set_active(&mut tier, &cap, false);
+        s.return_to_sender(cap);
+        ts::return_shared(tier);
+    };
+
+    s.next_tx(ALICE);
+    let mut tier = s.take_shared<Tier<HANEUL>>();
+    let fee_config = s.take_shared<FeeConfig>();
+    let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+    subscriptions::subscribe(&mut tier, &fee_config, ALICE, &mut payment, &clock, s.ctx());
+    payment.destroy_zero();
+    ts::return_shared(tier);
+    ts::return_shared(fee_config);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+/// The Patreon flow end-to-end: Bob gates replies on his post to his
+/// tier's active subscribers; Alice subscribes and can reply.
+#[test]
+fun subscriber_only_reply() {
+    let mut s = ts::begin(ADMIN);
+    setup_feed(&mut s);
+    setup_platform(&mut s);
+    let clock = new_clock(&mut s);
+
+    s.next_tx(BOB);
+    {
+        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        transfer::public_transfer(cap, BOB);
+    };
+    let p1 = create_simple_post(&mut s, BOB, b"ipfs://subscriber-gated", &clock);
+    s.next_tx(BOB);
+    {
+        let mut f = s.take_shared<Feed>();
+        let rules_cap = feed::create_post_rules(&mut f, p1, s.ctx());
+        transfer::public_transfer(rules_cap, BOB);
+        ts::return_shared(f);
+    };
+    s.next_tx(BOB);
+    {
+        let f = s.take_shared<Feed>();
+        let tier = s.take_shared<Tier<HANEUL>>();
+        let set_id = feed::post_rules_of(&f, p1).destroy_some();
+        let mut set = ts::take_shared_by_id<RuleSet<InteractPostOp>>(&s, set_id);
+        let cap = s.take_from_sender<RuleSetCap>();
+        subscriber_only_rule::add(&mut set, &cap, object::id(&tier), true);
+        s.return_to_sender(cap);
+        ts::return_shared(set);
+        ts::return_shared(f);
+        ts::return_shared(tier);
+    };
+
+    // Alice subscribes...
+    s.next_tx(ALICE);
+    {
+        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let fee_config = s.take_shared<FeeConfig>();
+        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        subscriptions::subscribe(&mut tier, &fee_config, ALICE, &mut payment, &clock, s.ctx());
+        payment.destroy_zero();
+        ts::return_shared(tier);
+        ts::return_shared(fee_config);
+    };
+
+    // ...and replies to the gated post.
+    s.next_tx(ALICE);
+    {
+        let mut f = s.take_shared<Feed>();
+        let tier = s.take_shared<Tier<HANEUL>>();
+        let feed_set = ts::take_shared_by_id<RuleSet<CreatePostOp>>(&s, feed::feed_rules_id(&f));
+        let post_set_id = feed::post_rules_of(&f, p1).destroy_some();
+        let post_set = ts::take_shared_by_id<RuleSet<InteractPostOp>>(&s, post_set_id);
+        let (ticket, req) = feed::request_create_post(
+            &f,
+            str(b"ipfs://subscriber-reply"),
+            option::some(p1),
+            option::none(),
+            option::none(),
+            s.ctx(),
+        );
+        let mut parent_req = feed::make_parent_request(&ticket);
+        subscriber_only_rule::prove(&post_set, &mut parent_req, &tier, &clock);
+        let p2 = feed::execute_create_post_gated(
+            &mut f,
+            &feed_set,
+            &post_set,
+            ticket,
+            req,
+            parent_req,
+            &clock,
+        );
+        assert!(feed::post_root(&feed::post(&f, p2)) == p1);
+        ts::return_shared(f);
+        ts::return_shared(tier);
+        ts::return_shared(feed_set);
+        ts::return_shared(post_set);
+    };
+
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 1, location = humming::subscriber_only_rule)]
+fun subscriber_only_rejects_non_subscriber() {
+    let mut s = ts::begin(ADMIN);
+    setup_feed(&mut s);
+    setup_platform(&mut s);
+    let clock = new_clock(&mut s);
+
+    s.next_tx(BOB);
+    {
+        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        transfer::public_transfer(cap, BOB);
+    };
+    let p1 = create_simple_post(&mut s, BOB, b"ipfs://subscriber-gated", &clock);
+    s.next_tx(BOB);
+    {
+        let mut f = s.take_shared<Feed>();
+        let rules_cap = feed::create_post_rules(&mut f, p1, s.ctx());
+        transfer::public_transfer(rules_cap, BOB);
+        ts::return_shared(f);
+    };
+    s.next_tx(BOB);
+    {
+        let f = s.take_shared<Feed>();
+        let tier = s.take_shared<Tier<HANEUL>>();
+        let set_id = feed::post_rules_of(&f, p1).destroy_some();
+        let mut set = ts::take_shared_by_id<RuleSet<InteractPostOp>>(&s, set_id);
+        let cap = s.take_from_sender<RuleSetCap>();
+        subscriber_only_rule::add(&mut set, &cap, object::id(&tier), true);
+        s.return_to_sender(cap);
+        ts::return_shared(set);
+        ts::return_shared(f);
+        ts::return_shared(tier);
+    };
+
+    // Carol never subscribed; her prove must abort.
+    s.next_tx(CAROL);
+    let mut f = s.take_shared<Feed>();
+    let tier = s.take_shared<Tier<HANEUL>>();
+    let feed_set = ts::take_shared_by_id<RuleSet<CreatePostOp>>(&s, feed::feed_rules_id(&f));
+    let post_set_id = feed::post_rules_of(&f, p1).destroy_some();
+    let post_set = ts::take_shared_by_id<RuleSet<InteractPostOp>>(&s, post_set_id);
+    let (ticket, req) = feed::request_create_post(
+        &f,
+        str(b"ipfs://intruder"),
+        option::some(p1),
+        option::none(),
+        option::none(),
+        s.ctx(),
+    );
+    let mut parent_req = feed::make_parent_request(&ticket);
+    subscriber_only_rule::prove(&post_set, &mut parent_req, &tier, &clock);
+    let _ = feed::execute_create_post_gated(
+        &mut f,
+        &feed_set,
+        &post_set,
+        ticket,
+        req,
+        parent_req,
+        &clock,
+    );
+    ts::return_shared(f);
+    ts::return_shared(tier);
+    ts::return_shared(feed_set);
+    ts::return_shared(post_set);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+fun paid_post_purchase_and_fee_split() {
+    let mut s = ts::begin(ADMIN);
+    setup_feed(&mut s);
+    setup_platform(&mut s);
+    let clock = new_clock(&mut s);
+
+    let p1 = create_simple_post(&mut s, ALICE, b"ipfs://premium", &clock);
+
+    // Alice paywalls her post at 500.
+    s.next_tx(ALICE);
+    {
+        let mut f = s.take_shared<Feed>();
+        paid_posts::create<HANEUL>(&mut f, p1, 500, s.ctx());
+        assert!(feed::paywall_of(&f, p1).is_some());
+        ts::return_shared(f);
+    };
+
+    // Bob buys it; change stays with him.
+    s.next_tx(BOB);
+    {
+        let mut paywall = s.take_shared<PostPaywall<HANEUL>>();
+        let fee_config = s.take_shared<FeeConfig>();
+        let f = s.take_shared<Feed>();
+        let mut payment = coin::mint_for_testing<HANEUL>(600, s.ctx());
+        paid_posts::purchase(&mut paywall, &fee_config, &f, &mut payment, s.ctx());
+        assert!(paid_posts::has_purchased(&paywall, BOB));
+        assert!(paid_posts::purchase_count(&paywall) == 1);
+        assert!(payment.value() == 100);
+        payment.burn_for_testing();
+        ts::return_shared(paywall);
+        ts::return_shared(fee_config);
+        ts::return_shared(f);
+    };
+
+    // Alice got 475 (95%), the treasury got 25 (5%).
+    s.next_tx(ALICE);
+    {
+        let proceeds = s.take_from_sender<Coin<HANEUL>>();
+        assert!(proceeds.value() == 475);
+        s.return_to_sender(proceeds);
+    };
+    s.next_tx(ADMIN);
+    {
+        let cut = s.take_from_sender<Coin<HANEUL>>();
+        assert!(cut.value() == 25);
+        s.return_to_sender(cut);
+    };
+
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 4, location = humming::paid_posts)]
+fun paid_post_double_purchase_aborts() {
+    let mut s = ts::begin(ADMIN);
+    setup_feed(&mut s);
+    setup_platform(&mut s);
+    let clock = new_clock(&mut s);
+
+    let p1 = create_simple_post(&mut s, ALICE, b"ipfs://premium", &clock);
+    s.next_tx(ALICE);
+    {
+        let mut f = s.take_shared<Feed>();
+        paid_posts::create<HANEUL>(&mut f, p1, 500, s.ctx());
+        ts::return_shared(f);
+    };
+
+    s.next_tx(BOB);
+    let mut paywall = s.take_shared<PostPaywall<HANEUL>>();
+    let fee_config = s.take_shared<FeeConfig>();
+    let f = s.take_shared<Feed>();
+    let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+    paid_posts::purchase(&mut paywall, &fee_config, &f, &mut payment, s.ctx());
+    paid_posts::purchase(&mut paywall, &fee_config, &f, &mut payment, s.ctx());
+    payment.burn_for_testing();
+    ts::return_shared(paywall);
+    ts::return_shared(fee_config);
+    ts::return_shared(f);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 0, location = humming::paid_posts)]
+fun paid_post_only_author_can_create() {
+    let mut s = ts::begin(ADMIN);
+    setup_feed(&mut s);
+    setup_platform(&mut s);
+    let clock = new_clock(&mut s);
+
+    let p1 = create_simple_post(&mut s, ALICE, b"ipfs://premium", &clock);
+
+    // Bob tries to paywall Alice's post.
+    s.next_tx(BOB);
+    let mut f = s.take_shared<Feed>();
+    paid_posts::create<HANEUL>(&mut f, p1, 500, s.ctx());
+    ts::return_shared(f);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 3, location = humming::paid_posts)]
+fun paid_post_closed_paywall_rejects() {
+    let mut s = ts::begin(ADMIN);
+    setup_feed(&mut s);
+    setup_platform(&mut s);
+    let clock = new_clock(&mut s);
+
+    let p1 = create_simple_post(&mut s, ALICE, b"ipfs://premium", &clock);
+    s.next_tx(ALICE);
+    {
+        let mut f = s.take_shared<Feed>();
+        paid_posts::create<HANEUL>(&mut f, p1, 500, s.ctx());
+        ts::return_shared(f);
+    };
+    s.next_tx(ALICE);
+    {
+        let mut paywall = s.take_shared<PostPaywall<HANEUL>>();
+        paid_posts::set_active(&mut paywall, false, s.ctx());
+        ts::return_shared(paywall);
+    };
+
+    s.next_tx(BOB);
+    let mut paywall = s.take_shared<PostPaywall<HANEUL>>();
+    let fee_config = s.take_shared<FeeConfig>();
+    let f = s.take_shared<Feed>();
+    let mut payment = coin::mint_for_testing<HANEUL>(500, s.ctx());
+    paid_posts::purchase(&mut paywall, &fee_config, &f, &mut payment, s.ctx());
+    payment.burn_for_testing();
+    ts::return_shared(paywall);
+    ts::return_shared(fee_config);
+    ts::return_shared(f);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 14, location = humming::feed)]
+fun paid_post_duplicate_paywall_rejected() {
+    let mut s = ts::begin(ADMIN);
+    setup_feed(&mut s);
+    setup_platform(&mut s);
+    let clock = new_clock(&mut s);
+
+    let p1 = create_simple_post(&mut s, ALICE, b"ipfs://premium", &clock);
+    s.next_tx(ALICE);
+    let mut f = s.take_shared<Feed>();
+    paid_posts::create<HANEUL>(&mut f, p1, 500, s.ctx());
+    paid_posts::create<HANEUL>(&mut f, p1, 900, s.ctx());
+    ts::return_shared(f);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 7, location = humming::paid_posts)]
+fun paid_post_on_repost_rejected() {
+    let mut s = ts::begin(ADMIN);
+    setup_feed(&mut s);
+    setup_platform(&mut s);
+    let clock = new_clock(&mut s);
+
+    let p1 = create_simple_post(&mut s, ALICE, b"ipfs://original", &clock);
+
+    // Alice reposts her own post, then tries to sell the repost.
+    s.next_tx(ALICE);
+    let mut f = s.take_shared<Feed>();
+    let set = ts::take_shared_by_id<RuleSet<CreatePostOp>>(&s, feed::feed_rules_id(&f));
+    let (ticket, req) = feed::request_create_post(
+        &f,
+        str(b""),
+        option::none(),
+        option::none(),
+        option::some(p1),
+        s.ctx(),
+    );
+    let p2 = feed::execute_create_post(&mut f, &set, ticket, req, &clock);
+    paid_posts::create<HANEUL>(&mut f, p2, 500, s.ctx());
+    ts::return_shared(f);
+    ts::return_shared(set);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+/// The fee lever: governance (here: the cap holder) walks the fee to
+/// zero and creators start receiving 100%.
+#[test]
+fun fee_can_be_walked_to_zero() {
+    let mut s = ts::begin(ADMIN);
+    setup_platform(&mut s);
+    let clock = new_clock(&mut s);
+
+    s.next_tx(ADMIN);
+    {
+        let mut fee_config = s.take_shared<FeeConfig>();
+        let cap = s.take_from_sender<FeeConfigCap>();
+        platform::set_fee_bps(&mut fee_config, &cap, 0);
+        assert!(platform::fee_bps(&fee_config) == 0);
+        assert!(platform::compute_fee(&fee_config, 1000) == 0);
+        s.return_to_sender(cap);
+        ts::return_shared(fee_config);
+    };
+
+    s.next_tx(BOB);
+    {
+        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        transfer::public_transfer(cap, BOB);
+    };
+    s.next_tx(ALICE);
+    {
+        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let fee_config = s.take_shared<FeeConfig>();
+        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        subscriptions::subscribe(&mut tier, &fee_config, ALICE, &mut payment, &clock, s.ctx());
+        payment.destroy_zero();
+        ts::return_shared(tier);
+        ts::return_shared(fee_config);
+    };
+
+    // Bob receives the full amount.
+    s.next_tx(BOB);
+    {
+        let proceeds = s.take_from_sender<Coin<HANEUL>>();
+        assert!(proceeds.value() == 1000);
+        s.return_to_sender(proceeds);
+    };
+
+    clock.destroy_for_testing();
+    s.end();
+}
+
+/// No cap holder — platform or governance — can push the fee past the
+/// compile-time ceiling.
+#[test]
+#[expected_failure(abort_code = 0, location = humming::platform)]
+fun fee_above_ceiling_rejected() {
+    let mut s = ts::begin(ADMIN);
+    setup_platform(&mut s);
+
+    s.next_tx(ADMIN);
+    let mut fee_config = s.take_shared<FeeConfig>();
+    let cap = s.take_from_sender<FeeConfigCap>();
+    platform::set_fee_bps(&mut fee_config, &cap, platform::max_fee_bps() + 1);
+    s.return_to_sender(cap);
+    ts::return_shared(fee_config);
     s.end();
 }
 

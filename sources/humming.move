@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// Package initializer: claims the `Publisher` and sets up the trading
-/// infrastructure for `Username` objects.
+/// infrastructure for `Username` objects, plus the platform fee
+/// config.
 ///
 /// `Username` is the package's tradeable asset, but wallets and
 /// marketplaces can only render and trade a type through objects that
@@ -16,12 +17,20 @@
 ///   marketplaces need to complete a trade. It starts with no rules
 ///   (free trading); royalty or other rules can be added later with
 ///   the `TransferPolicyCap`.
+/// - The canonical `FeeConfig` (see `humming::platform`) — created
+///   here and only here, so every payment path shares one fee lever.
 module humming::humming;
 
 use humming::namespace::Username;
+use humming::platform;
 use haneul::display;
 use haneul::package;
 use haneul::transfer_policy;
+
+/// Launch fee: 5%. The ceiling (10%) is a compile-time constant in
+/// `humming::platform`; the plan is to walk this down over time, with
+/// the `FeeConfigCap` eventually handed to governance.
+const INITIAL_FEE_BPS: u64 = 500;
 
 /// One-time witness. Claiming the `Publisher` with it is what later
 /// authorizes creating `Display` and `TransferPolicy` objects for the
@@ -47,9 +56,12 @@ fun init(otw: HUMMING, ctx: &mut TxContext) {
     transfer::public_share_object(policy);
 
     let deployer = ctx.sender();
+    let fee_cap = platform::new(INITIAL_FEE_BPS, deployer, ctx);
+
     transfer::public_transfer(publisher, deployer);
     transfer::public_transfer(display, deployer);
     transfer::public_transfer(policy_cap, deployer);
+    transfer::public_transfer(fee_cap, deployer);
 }
 
 #[test_only]

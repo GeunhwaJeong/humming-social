@@ -35,6 +35,7 @@ const EPostAlreadyGated: u64 = 10;
 const EWrongCap: u64 = 11;
 const EWrongVersion: u64 = 12;
 const EAlreadyCurrent: u64 = 13;
+const EPostAlreadyPaywalled: u64 = 14;
 
 /// Operation marker: creating a post on the feed.
 public struct CreatePostOp {}
@@ -70,6 +71,8 @@ public struct Feed has key {
     author_post_count: Table<address, u64>,
     /// Per-post reply rule sets: post id -> `RuleSet<InteractPostOp>` ID.
     post_rules: Table<u64, ID>,
+    /// Per-post paywalls: post id -> `paid_posts::PostPaywall` ID.
+    post_paywalls: Table<u64, ID>,
 }
 
 public struct FeedAdminCap has key, store {
@@ -134,6 +137,7 @@ public fun create(metadata_uri: String, ctx: &mut TxContext): (FeedAdminCap, Rul
         post_count: 0,
         author_post_count: table::new(ctx),
         post_rules: table::new(ctx),
+        post_paywalls: table::new(ctx),
     };
     let admin_cap = FeedAdminCap { id: object::new(ctx), feed: object::id(&feed) };
     event::emit(FeedCreated { feed: object::id(&feed) });
@@ -315,6 +319,14 @@ public fun post_rules_of(feed: &Feed, post_id: u64): Option<ID> {
     }
 }
 
+public fun paywall_of(feed: &Feed, post_id: u64): Option<ID> {
+    if (feed.post_paywalls.contains(post_id)) {
+        option::some(*feed.post_paywalls.borrow(post_id))
+    } else {
+        option::none()
+    }
+}
+
 public fun post_author(post: &Post): address { post.author }
 
 public fun post_content_uri(post: &Post): String { post.content_uri }
@@ -340,6 +352,16 @@ public fun ticket_parent_author(ticket: &CreatePostTicket): Option<address> {
 }
 
 public fun ticket_parent_gated(ticket: &CreatePostTicket): bool { ticket.parent_gated }
+
+// === Package-internal (called by `paid_posts`) ===
+
+/// Record a post's paywall. Authorship and post liveness are checked
+/// by the caller; this enforces the one-paywall-per-post invariant.
+public(package) fun register_paywall(feed: &mut Feed, post_id: u64, paywall: ID) {
+    assert_version(feed);
+    assert!(!feed.post_paywalls.contains(post_id), EPostAlreadyPaywalled);
+    feed.post_paywalls.add(post_id, paywall);
+}
 
 // === Internal ===
 
