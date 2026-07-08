@@ -22,7 +22,7 @@ sources/
     ├── username_validation_rule.move Length + charset validation
     └── followers_only_rule.move      Followers-only replies
 tests/
-└── humming_tests.move            33 scenario tests (all passing)
+└── humming_tests.move            41 scenario tests (all passing)
 ```
 
 ## Architecture mapping
@@ -214,11 +214,23 @@ init artifacts land where they should, and a full kiosk cycle —
 rule-gated mint → list → purchase through the shared policy → seller
 withdraws proceeds.
 
+### 8. Rule-framework coverage round: any-of & administration (33 → 41 tests)
+
+Half of the Lens rule semantics — the *any-of* quota — and every
+administration error path in `rules.move` had no test at all. Eight
+tests close that: either any-of rule admits on its own; an empty stamp
+set aborts; a required stamp does not count toward the any-of quota
+**and vice versa** (the two quotas are independent by construction, and
+now by test); duplicate adds abort even under the other requiredness;
+a cap cannot administer a foreign rule set; removing a never-added rule
+aborts; and `MAX_RULES` counts required + any-of together (a test-only
+`FillerRule<phantom T>` witness supplies 21 distinct rule identities).
+
 ## Build & test
 
 ```bash
 haneul move build
-haneul move test   # 33 tests
+haneul move test   # 41 tests
 ```
 
 ## License

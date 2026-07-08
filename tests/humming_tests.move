@@ -34,6 +34,11 @@ const CAROL: address = @0xCA401;
 
 fun str(bytes: vector<u8>): String { string::utf8(bytes) }
 
+/// Test-only rule witness: each phantom instantiation has a distinct
+/// `TypeName`, giving an unbounded supply of rule identities for
+/// exercising `MAX_RULES`.
+public struct FillerRule<phantom T> has drop {}
+
 fun new_clock(s: &mut Scenario): Clock {
     clock::create_for_testing(s.ctx())
 }
@@ -971,6 +976,256 @@ fun graph_removed_rule_no_longer_enforced() {
     };
 
     clock.destroy_for_testing();
+    s.end();
+}
+
+// === Rule framework: any_of semantics & administration ===
+
+/// Group whose join rule set has two ANY-OF rules: hold at least 500
+/// GEUNHWA, or pay 1000. Satisfying either one admits.
+fun setup_any_of_group(s: &mut Scenario) {
+    setup_group(s);
+    s.next_tx(ADMIN);
+    let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
+    let cap = s.take_from_sender<RuleSetCap>();
+    token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, false);
+    simple_payment_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 1000, ADMIN, false);
+    s.return_to_sender(cap);
+    ts::return_shared(set);
+}
+
+#[test]
+fun group_any_of_either_rule_admits() {
+    let mut s = ts::begin(ADMIN);
+    setup_any_of_group(&mut s);
+    let clock = new_clock(&mut s);
+
+    // Alice pays; she never proves the token rule.
+    s.next_tx(ALICE);
+    {
+        let mut g = s.take_shared<Group>();
+        let set = s.take_shared<RuleSet<JoinGroupOp>>();
+        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        let (ticket, mut req) = group::request_join(&g, s.ctx());
+        simple_payment_rule::pay(&set, &mut req, &mut payment, s.ctx());
+        group::execute_join(&mut g, &set, ticket, req, &clock);
+        assert!(group::is_member(&g, ALICE));
+        payment.destroy_zero();
+        ts::return_shared(g);
+        ts::return_shared(set);
+    };
+
+    // Bob shows a holding; he never pays.
+    s.next_tx(BOB);
+    {
+        let mut g = s.take_shared<Group>();
+        let set = s.take_shared<RuleSet<JoinGroupOp>>();
+        let holdings = coin::mint_for_testing<HANEUL>(500, s.ctx());
+        let (ticket, mut req) = group::request_join(&g, s.ctx());
+        token_gated_rule::prove(&set, &mut req, &holdings);
+        group::execute_join(&mut g, &set, ticket, req, &clock);
+        assert!(group::is_member(&g, BOB));
+        assert!(group::member_count(&g) == 2);
+        holdings.burn_for_testing();
+        ts::return_shared(g);
+        ts::return_shared(set);
+    };
+
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 3, location = humming::rules)]
+fun group_any_of_none_satisfied_aborts() {
+    let mut s = ts::begin(ADMIN);
+    setup_any_of_group(&mut s);
+    let clock = new_clock(&mut s);
+
+    // Carol satisfies neither any-of rule.
+    s.next_tx(CAROL);
+    let mut g = s.take_shared<Group>();
+    let set = s.take_shared<RuleSet<JoinGroupOp>>();
+    let (ticket, req) = group::request_join(&g, s.ctx());
+    group::execute_join(&mut g, &set, ticket, req, &clock);
+    ts::return_shared(g);
+    ts::return_shared(set);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+/// A required rule's stamp must not count toward the any-of quota.
+#[test]
+#[expected_failure(abort_code = 3, location = humming::rules)]
+fun group_required_stamp_does_not_count_as_any_of() {
+    let mut s = ts::begin(ADMIN);
+    setup_group(&mut s);
+    let clock = new_clock(&mut s);
+
+    // token rule REQUIRED, payment rule ANY-OF.
+    s.next_tx(ADMIN);
+    {
+        let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
+        let cap = s.take_from_sender<RuleSetCap>();
+        token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, true);
+        simple_payment_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 1000, ADMIN, false);
+        s.return_to_sender(cap);
+        ts::return_shared(set);
+    };
+
+    // Alice proves the required token rule but never pays.
+    s.next_tx(ALICE);
+    let mut g = s.take_shared<Group>();
+    let set = s.take_shared<RuleSet<JoinGroupOp>>();
+    let holdings = coin::mint_for_testing<HANEUL>(600, s.ctx());
+    let (ticket, mut req) = group::request_join(&g, s.ctx());
+    token_gated_rule::prove(&set, &mut req, &holdings);
+    group::execute_join(&mut g, &set, ticket, req, &clock);
+    holdings.burn_for_testing();
+    ts::return_shared(g);
+    ts::return_shared(set);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+/// The mirror image: an any-of stamp must not satisfy a required rule.
+#[test]
+#[expected_failure(abort_code = 2, location = humming::rules)]
+fun group_any_of_stamp_does_not_count_as_required() {
+    let mut s = ts::begin(ADMIN);
+    setup_group(&mut s);
+    let clock = new_clock(&mut s);
+
+    s.next_tx(ADMIN);
+    {
+        let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
+        let cap = s.take_from_sender<RuleSetCap>();
+        token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, true);
+        simple_payment_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 1000, ADMIN, false);
+        s.return_to_sender(cap);
+        ts::return_shared(set);
+    };
+
+    // Alice pays (any-of) but never proves the required token rule.
+    s.next_tx(ALICE);
+    let mut g = s.take_shared<Group>();
+    let set = s.take_shared<RuleSet<JoinGroupOp>>();
+    let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+    let (ticket, mut req) = group::request_join(&g, s.ctx());
+    simple_payment_rule::pay(&set, &mut req, &mut payment, s.ctx());
+    group::execute_join(&mut g, &set, ticket, req, &clock);
+    payment.destroy_zero();
+    ts::return_shared(g);
+    ts::return_shared(set);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 0, location = humming::rules)]
+fun rules_duplicate_add_aborts() {
+    let mut s = ts::begin(ADMIN);
+    setup_group(&mut s);
+
+    // Re-adding a rule must abort even under the other requiredness.
+    s.next_tx(ADMIN);
+    let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
+    let cap = s.take_from_sender<RuleSetCap>();
+    token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, true);
+    token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 900, false);
+    s.return_to_sender(cap);
+    ts::return_shared(set);
+    s.end();
+}
+
+/// A `RuleSetCap` only administers the exact set it was created with —
+/// here Bob tries to configure ALICE's follow rules with HIS own cap.
+#[test]
+#[expected_failure(abort_code = 5, location = humming::rules)]
+fun rules_foreign_cap_rejected() {
+    let mut s = ts::begin(ADMIN);
+    setup_graph(&mut s);
+
+    s.next_tx(ALICE);
+    {
+        let mut g = s.take_shared<Graph>();
+        let cap = graph::create_my_follow_rules(&mut g, s.ctx());
+        transfer::public_transfer(cap, ALICE);
+        ts::return_shared(g);
+    };
+    s.next_tx(BOB);
+    {
+        let mut g = s.take_shared<Graph>();
+        let cap = graph::create_my_follow_rules(&mut g, s.ctx());
+        transfer::public_transfer(cap, BOB);
+        ts::return_shared(g);
+    };
+
+    s.next_tx(BOB);
+    let g = s.take_shared<Graph>();
+    let alice_set_id = graph::follow_rules_of(&g, ALICE).destroy_some();
+    let mut alice_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, alice_set_id);
+    let bob_cap = s.take_from_sender<RuleSetCap>();
+    simple_payment_rule::add<FollowOp, HANEUL>(&mut alice_set, &bob_cap, 1, BOB, true);
+    s.return_to_sender(bob_cap);
+    ts::return_shared(alice_set);
+    ts::return_shared(g);
+    s.end();
+}
+
+/// Removing a rule that was never added aborts (the presence of a
+/// different rule does not mask the lookup).
+#[test]
+#[expected_failure(abort_code = 1, location = humming::rules)]
+fun rules_remove_missing_rule_aborts() {
+    let mut s = ts::begin(ADMIN);
+    setup_group(&mut s);
+
+    s.next_tx(ADMIN);
+    let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
+    let cap = s.take_from_sender<RuleSetCap>();
+    simple_payment_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 1000, ADMIN, true);
+    token_gated_rule::remove<JoinGroupOp, HANEUL>(&mut set, &cap);
+    s.return_to_sender(cap);
+    ts::return_shared(set);
+    s.end();
+}
+
+/// `MAX_RULES` (20) counts required and any-of rules together: 10 of
+/// each fill the set, the 21st add aborts.
+#[test]
+#[expected_failure(abort_code = 4, location = humming::rules)]
+fun rules_max_rules_enforced() {
+    let mut s = ts::begin(ADMIN);
+    setup_group(&mut s);
+
+    s.next_tx(ADMIN);
+    let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
+    let cap = s.take_from_sender<RuleSetCap>();
+    rules::add(FillerRule<u8> {}, &mut set, &cap, true, true);
+    rules::add(FillerRule<u16> {}, &mut set, &cap, true, true);
+    rules::add(FillerRule<u32> {}, &mut set, &cap, true, true);
+    rules::add(FillerRule<u64> {}, &mut set, &cap, true, true);
+    rules::add(FillerRule<u128> {}, &mut set, &cap, true, true);
+    rules::add(FillerRule<u256> {}, &mut set, &cap, true, true);
+    rules::add(FillerRule<bool> {}, &mut set, &cap, true, true);
+    rules::add(FillerRule<address> {}, &mut set, &cap, true, true);
+    rules::add(FillerRule<ID> {}, &mut set, &cap, true, true);
+    rules::add(FillerRule<String> {}, &mut set, &cap, true, true);
+    rules::add(FillerRule<vector<u8>> {}, &mut set, &cap, true, false);
+    rules::add(FillerRule<vector<u16>> {}, &mut set, &cap, true, false);
+    rules::add(FillerRule<vector<u32>> {}, &mut set, &cap, true, false);
+    rules::add(FillerRule<vector<u64>> {}, &mut set, &cap, true, false);
+    rules::add(FillerRule<vector<u128>> {}, &mut set, &cap, true, false);
+    rules::add(FillerRule<vector<u256>> {}, &mut set, &cap, true, false);
+    rules::add(FillerRule<vector<bool>> {}, &mut set, &cap, true, false);
+    rules::add(FillerRule<vector<address>> {}, &mut set, &cap, true, false);
+    rules::add(FillerRule<vector<ID>> {}, &mut set, &cap, true, false);
+    rules::add(FillerRule<vector<String>> {}, &mut set, &cap, true, false);
+    // 21st rule: over the cap.
+    rules::add(FillerRule<vector<vector<u8>>> {}, &mut set, &cap, true, false);
+    s.return_to_sender(cap);
+    ts::return_shared(set);
     s.end();
 }
 
