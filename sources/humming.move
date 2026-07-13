@@ -56,12 +56,13 @@ fun init(otw: HUMMING, ctx: &mut TxContext) {
     transfer::public_share_object(policy);
 
     let deployer = ctx.sender();
-    let fee_cap = platform::new(INITIAL_FEE_BPS, deployer, ctx);
+    // Also delivers the `FeeConfigCap` to the deployer: the cap is
+    // `key`-only, so only its defining module can move it.
+    platform::new(INITIAL_FEE_BPS, deployer, ctx);
 
     transfer::public_transfer(publisher, deployer);
     transfer::public_transfer(display, deployer);
     transfer::public_transfer(policy_cap, deployer);
-    transfer::public_transfer(fee_cap, deployer);
 }
 
 #[test_only]

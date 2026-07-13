@@ -33,6 +33,10 @@ const EWrongVersion: u64 = 3;
 const EAlreadyCurrent: u64 = 4;
 const EPriceMismatch: u64 = 5;
 
+/// 10 years. Not an economic bound — keeps a creator-configured
+/// period from overflowing the u64 expiry math in `subscribe`.
+const MAX_PERIOD_MS: u64 = 315_360_000_000;
+
 public struct Tier<phantom T> has key {
     id: UID,
     version: u64,
@@ -94,7 +98,7 @@ public fun create<T>(
     metadata_uri: String,
     ctx: &mut TxContext,
 ): TierCap {
-    assert!(price > 0 && period_ms > 0, EInvalidConfig);
+    assert!(price > 0 && period_ms > 0 && period_ms <= MAX_PERIOD_MS, EInvalidConfig);
     let tier = Tier<T> {
         id: object::new(ctx),
         version: rules::current_version(),

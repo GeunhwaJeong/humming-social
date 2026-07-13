@@ -41,9 +41,13 @@ public struct PostPaywall<phantom T> has key {
     version: u64,
     feed: ID,
     post_id: u64,
-    /// The post's author at paywall creation: proceeds recipient and
-    /// the paywall's admin authority.
+    /// The post's author at paywall creation: the paywall's admin
+    /// authority (immutable).
     author: address,
+    /// Proceeds recipient (initially the author). Kept separate from
+    /// `author` so a creator can rotate payout wallets without losing
+    /// the paywall's admin identity.
+    recipient: address,
     price: u64,
     /// Closed paywalls reject new purchases; past purchases stand.
     active: bool,
@@ -83,6 +87,11 @@ public struct PaywallActiveChanged has copy, drop {
     active: bool,
 }
 
+public struct PaywallRecipientChanged has copy, drop {
+    paywall: ID,
+    recipient: address,
+}
+
 /// Paywall one of your posts. Registers the paywall in the feed (a
 /// post can only ever have one) and shares it.
 public fun create<T>(feed: &mut Feed, post_id: u64, price: u64, ctx: &mut TxContext) {
@@ -98,6 +107,7 @@ public fun create<T>(feed: &mut Feed, post_id: u64, price: u64, ctx: &mut TxCont
         feed: object::id(feed),
         post_id,
         author: ctx.sender(),
+        recipient: ctx.sender(),
         price,
         active: true,
         purchases: table::new(ctx),
@@ -114,7 +124,7 @@ public fun create<T>(feed: &mut Feed, post_id: u64, price: u64, ctx: &mut TxCont
 }
 
 /// Buy the post once. Proceeds (minus the platform's cut) go straight
-/// to the author; the purchase is recorded permanently.
+/// to the paywall's recipient; the purchase is recorded permanently.
 ///
 /// `expected_price` is the price the buyer saw when signing: if the
 /// author's price change lands first, the purchase aborts instead of
@@ -136,7 +146,7 @@ public fun purchase<T>(
     let buyer = ctx.sender();
     assert!(buyer != paywall.author, EAuthorCannotBuy);
     assert!(!paywall.purchases.contains(buyer), EAlreadyPurchased);
-    let fee = platform::collect(fee_config, payment, paywall.price, paywall.author, ctx);
+    let fee = platform::collect(fee_config, payment, paywall.price, paywall.recipient, ctx);
     paywall.purchases.add(buyer, paywall.price);
     paywall.purchase_count = paywall.purchase_count + 1;
     event::emit(PostPurchased {
@@ -172,6 +182,15 @@ public fun set_active<T>(paywall: &mut PostPaywall<T>, active: bool, ctx: &TxCon
     event::emit(PaywallActiveChanged { paywall: object::id(paywall), active });
 }
 
+/// Redirect future proceeds (wallet rotation). Admin authority stays
+/// with `author`; only the payout target moves.
+public fun set_recipient<T>(paywall: &mut PostPaywall<T>, recipient: address, ctx: &TxContext) {
+    assert_version(paywall);
+    assert_author(paywall, ctx);
+    paywall.recipient = recipient;
+    event::emit(PaywallRecipientChanged { paywall: object::id(paywall), recipient });
+}
+
 /// Bring a paywall created under an older package version up to the
 /// current one, re-enabling its entry points after an upgrade.
 public fun migrate<T>(paywall: &mut PostPaywall<T>, ctx: &TxContext) {
@@ -189,6 +208,8 @@ public fun has_purchased<T>(paywall: &PostPaywall<T>, account: address): bool {
 public fun price<T>(paywall: &PostPaywall<T>): u64 { paywall.price }
 
 public fun author<T>(paywall: &PostPaywall<T>): address { paywall.author }
+
+public fun recipient<T>(paywall: &PostPaywall<T>): address { paywall.recipient }
 
 public fun post_id<T>(paywall: &PostPaywall<T>): u64 { paywall.post_id }
 

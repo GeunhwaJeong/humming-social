@@ -1,0 +1,119 @@
+// Copyright (c) Haneul Labs
+// SPDX-License-Identifier: Apache-2.0
+
+/// Tests for `humming::locked_token_rule`: the flash-proof token gate.
+#[test_only]
+module humming::locked_token_tests;
+
+use humming::group::{Self, Group, JoinGroupOp};
+use humming::locked_token_rule::{Self, Lock};
+use humming::rules::{Self, RuleSet};
+use humming::test_helpers::{new_clock, setup_locked_group};
+use haneul::coin;
+use haneul::event;
+use haneul::haneul::HANEUL;
+use haneul::test_scenario::{Self as ts};
+
+const ADMIN: address = @0xAD;
+const ALICE: address = @0xA11CE;
+
+const DAY_MS: u64 = 86_400_000;
+
+#[test]
+fun group_locked_token_join_and_withdraw_after_unlock() {
+    let mut s = ts::begin(ADMIN);
+    setup_locked_group(&mut s);
+    let mut clock = new_clock(&mut s);
+
+    // Alice locks 600, proves, and joins. The proof extends the lock.
+    s.next_tx(ALICE);
+    {
+        let mut g = s.take_shared<Group>();
+        let set = s.take_shared<RuleSet<JoinGroupOp>>();
+        let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
+        locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(600, s.ctx()));
+        let (ticket, mut req) = group::request_join(&g, s.ctx());
+        locked_token_rule::prove(&set, &mut req, &mut lock, &clock);
+        group::execute_join(&mut g, &set, ticket, req, &clock);
+        assert!(group::is_member(&g, ALICE));
+        assert!(locked_token_rule::locked_balance(&lock) == 600);
+        assert!(locked_token_rule::unlock_ms(&lock) == DAY_MS);
+        // Lock lifecycle events were emitted...
+        assert!(event::events_by_type<locked_token_rule::LockCreated>().length() == 1);
+        assert!(event::events_by_type<locked_token_rule::Deposited>().length() == 1);
+        assert!(event::events_by_type<locked_token_rule::LockExtended>().length() == 1);
+        // ...and a second proof at the same instant is silent: the
+        // release time does not move, so no event is emitted.
+        let mut req2 = rules::new_request<JoinGroupOp>(@0x0, ALICE);
+        locked_token_rule::prove(&set, &mut req2, &mut lock, &clock);
+        rules::destroy(req2);
+        assert!(event::events_by_type<locked_token_rule::LockExtended>().length() == 1);
+        locked_token_rule::keep(lock, s.ctx());
+        ts::return_shared(g);
+        ts::return_shared(set);
+    };
+
+    // After the lock period elapses, Alice withdraws everything.
+    s.next_tx(ALICE);
+    {
+        clock.set_for_testing(DAY_MS);
+        let mut lock = s.take_from_sender<Lock<HANEUL>>();
+        let funds = locked_token_rule::withdraw(&mut lock, 600, &clock, s.ctx());
+        assert!(funds.value() == 600);
+        funds.burn_for_testing();
+        locked_token_rule::destroy_empty(lock);
+        assert!(event::events_by_type<locked_token_rule::Withdrawn>().length() == 1);
+        assert!(event::events_by_type<locked_token_rule::LockDestroyed>().length() == 1);
+    };
+
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 1, location = humming::locked_token_rule)]
+fun locked_token_withdraw_before_unlock_fails() {
+    let mut s = ts::begin(ADMIN);
+    setup_locked_group(&mut s);
+    let clock = new_clock(&mut s);
+
+    // Proving and withdrawing in the same breath must abort: this is
+    // exactly the borrow-prove-return flash pattern the lock prevents.
+    s.next_tx(ALICE);
+    let mut g = s.take_shared<Group>();
+    let set = s.take_shared<RuleSet<JoinGroupOp>>();
+    let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
+    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(600, s.ctx()));
+    let (ticket, mut req) = group::request_join(&g, s.ctx());
+    locked_token_rule::prove(&set, &mut req, &mut lock, &clock);
+    let funds = locked_token_rule::withdraw(&mut lock, 600, &clock, s.ctx());
+    funds.burn_for_testing();
+    group::execute_join(&mut g, &set, ticket, req, &clock);
+    locked_token_rule::keep(lock, s.ctx());
+    ts::return_shared(g);
+    ts::return_shared(set);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+#[test]
+#[expected_failure(abort_code = 0, location = humming::locked_token_rule)]
+fun locked_token_insufficient_locked_balance_fails() {
+    let mut s = ts::begin(ADMIN);
+    setup_locked_group(&mut s);
+    let clock = new_clock(&mut s);
+
+    s.next_tx(ALICE);
+    let mut g = s.take_shared<Group>();
+    let set = s.take_shared<RuleSet<JoinGroupOp>>();
+    let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
+    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(499, s.ctx()));
+    let (ticket, mut req) = group::request_join(&g, s.ctx());
+    locked_token_rule::prove(&set, &mut req, &mut lock, &clock);
+    group::execute_join(&mut g, &set, ticket, req, &clock);
+    locked_token_rule::keep(lock, s.ctx());
+    ts::return_shared(g);
+    ts::return_shared(set);
+    clock.destroy_for_testing();
+    s.end();
+}

@@ -26,6 +26,10 @@ const EKeyMismatch: u64 = 7;
 const EUsernameStillAssigned: u64 = 8;
 const EWrongVersion: u64 = 9;
 const EAlreadyCurrent: u64 = 10;
+const EUppercaseNotAllowed: u64 = 11;
+
+const CHAR_UPPER_A: u8 = 65;
+const CHAR_UPPER_Z: u8 = 90;
 
 /// Operation marker: minting a new username.
 public struct CreateUsernameOp {}
@@ -266,6 +270,19 @@ public fun ticket_name(ticket: &CreateUsernameTicket): String { ticket.name }
 
 fun assert_valid_name(name: &String) {
     assert!(name.length() > 0 && name.length() < 256, EInvalidName);
+    // Uniqueness in `taken` is byte-exact and the chain cannot
+    // case-fold, so "Alice" next to "alice" would be a squatting
+    // vector. Uppercase ASCII is therefore rejected at the primitive
+    // level — even on a namespace whose admin forgot to attach a
+    // validation rule. Everything else (charset, length policy, and
+    // non-ASCII names) remains per-namespace rule territory.
+    let bytes = name.as_bytes();
+    let mut i = 0;
+    while (i < bytes.length()) {
+        let c = bytes[i];
+        assert!(c < CHAR_UPPER_A || c > CHAR_UPPER_Z, EUppercaseNotAllowed);
+        i = i + 1;
+    };
 }
 
 fun assert_version(ns: &Namespace) {

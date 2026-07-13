@@ -27,6 +27,7 @@
 /// calls — but they can pass shared objects directly into rule modules.
 module humming::rules;
 
+use std::string::String;
 use std::type_name::{Self, TypeName};
 use haneul::bag::{Self, Bag};
 use haneul::vec_set::{Self, VecSet};
@@ -230,6 +231,10 @@ public fun migrate<OP>(set: &mut RuleSet<OP>, cap: &RuleSetCap) {
 }
 
 public fun current_version(): u64 { VERSION }
+
+/// Human-readable package identity, answering "what is live on-chain?"
+/// with one RPC call. Bump alongside `VERSION`.
+public fun type_and_version(): String { b"Humming 1.0.0".to_string() }
 
 public fun version<OP>(set: &RuleSet<OP>): u64 { set.version }
 

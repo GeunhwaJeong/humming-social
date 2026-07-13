@@ -24,6 +24,7 @@ const EWrongCap: u64 = 6;
 const ENotBanned: u64 = 7;
 const EWrongVersion: u64 = 8;
 const EAlreadyCurrent: u64 = 9;
+const EAlreadyBanned: u64 = 10;
 
 /// Operation marker: joining the group.
 public struct JoinGroupOp {}
@@ -167,6 +168,7 @@ public fun admin_remove_member(group: &mut Group, cap: &GroupAdminCap, account: 
 public fun ban(group: &mut Group, cap: &GroupAdminCap, account: address) {
     assert_version(group);
     assert_cap(group, cap);
+    assert!(!group.banned.contains(account), EAlreadyBanned);
     if (group.members.contains(account)) {
         group.members.remove(account);
         group.member_count = group.member_count - 1;
