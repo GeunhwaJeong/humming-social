@@ -7,8 +7,8 @@ module humming::locked_token_tests;
 
 use humming::group::{Self, Group, JoinGroupOp};
 use humming::locked_token_rule::{Self, Lock};
-use humming::rules::{Self, RuleSet};
-use humming::test_helpers::{new_clock, setup_locked_group};
+use humming::rules::{Self, RuleSet, RuleSetCap};
+use humming::test_helpers::{new_clock, setup_group, setup_locked_group};
 use haneul::coin;
 use haneul::event;
 use haneul::haneul::HANEUL;
@@ -93,6 +93,124 @@ fun locked_token_withdraw_before_unlock_fails() {
     ts::return_shared(g);
     ts::return_shared(set);
     clock.destroy_for_testing();
+    s.end();
+}
+
+/// A rule demanding a lock period beyond MAX_LOCK_MS must be rejected
+/// at configuration time: had it existed, a single `prove` against it
+/// would freeze the lock's whole balance effectively forever.
+#[test]
+#[expected_failure(abort_code = 2, location = humming::locked_token_rule)]
+fun locked_token_add_excessive_min_lock_ms_fails() {
+    let mut s = ts::begin(ADMIN);
+    setup_group(&mut s);
+
+    s.next_tx(ADMIN);
+    let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
+    let cap = s.take_from_sender<RuleSetCap>();
+    locked_token_rule::add<JoinGroupOp, HANEUL>(
+        &mut set,
+        &cap,
+        500,
+        locked_token_rule::max_lock_ms() + 1,
+        true,
+    );
+    s.return_to_sender(cap);
+    ts::return_shared(set);
+    s.end();
+}
+
+/// The boundary config is allowed, and a proof against it commits the
+/// lock for exactly MAX_LOCK_MS — no further.
+#[test]
+fun locked_token_prove_at_max_lock_ms_bounds_unlock() {
+    let mut s = ts::begin(ADMIN);
+    setup_group(&mut s);
+
+    s.next_tx(ADMIN);
+    {
+        let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
+        let cap = s.take_from_sender<RuleSetCap>();
+        locked_token_rule::add<JoinGroupOp, HANEUL>(
+            &mut set,
+            &cap,
+            500,
+            locked_token_rule::max_lock_ms(),
+            true,
+        );
+        s.return_to_sender(cap);
+        ts::return_shared(set);
+    };
+
+    let clock = new_clock(&mut s);
+    s.next_tx(ALICE);
+    {
+        let set = s.take_shared<RuleSet<JoinGroupOp>>();
+        let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
+        locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(600, s.ctx()));
+        let mut req = rules::new_request<JoinGroupOp>(@0x0, ALICE);
+        locked_token_rule::prove(&set, &mut req, &mut lock, &clock);
+        rules::destroy(req);
+        assert!(locked_token_rule::unlock_ms(&lock) == locked_token_rule::max_lock_ms());
+        locked_token_rule::keep(lock, s.ctx());
+        ts::return_shared(set);
+    };
+
+    clock.destroy_for_testing();
+    s.end();
+}
+
+/// A stale lock refuses to release funds until migrated: this is the
+/// retirement lever for a future upgrade of the withdraw/prove logic.
+#[test]
+#[expected_failure(abort_code = 3, location = humming::locked_token_rule)]
+fun stale_lock_blocks_withdraw() {
+    let mut s = ts::begin(ALICE);
+    let clock = new_clock(&mut s);
+
+    s.next_tx(ALICE);
+    let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
+    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(100, s.ctx()));
+    locked_token_rule::set_version_for_testing(&mut lock, 0);
+    let funds = locked_token_rule::withdraw(&mut lock, 100, &clock, s.ctx());
+    funds.burn_for_testing();
+    locked_token_rule::keep(lock, s.ctx());
+    clock.destroy_for_testing();
+    s.end();
+}
+
+/// Self-service migration: the owner brings a stale lock current and
+/// the funds move again — no cap, no admin in the loop.
+#[test]
+fun lock_migrate_restores_stale_lock() {
+    let mut s = ts::begin(ALICE);
+    let clock = new_clock(&mut s);
+
+    s.next_tx(ALICE);
+    let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
+    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(100, s.ctx()));
+    locked_token_rule::set_version_for_testing(&mut lock, 0);
+    locked_token_rule::migrate(&mut lock);
+    assert!(locked_token_rule::version(&lock) == rules::current_version());
+    let funds = locked_token_rule::withdraw(&mut lock, 100, &clock, s.ctx());
+    assert!(funds.value() == 100);
+    funds.burn_for_testing();
+    locked_token_rule::destroy_empty(lock);
+    clock.destroy_for_testing();
+    s.end();
+}
+
+/// Migrating a current lock aborts — migrate is an upgrade tool, not a
+/// no-op (mirrors the shared-object migrate contract).
+#[test]
+#[expected_failure(abort_code = 4, location = humming::locked_token_rule)]
+fun lock_migrate_current_version_aborts() {
+    let mut s = ts::begin(ALICE);
+
+    s.next_tx(ALICE);
+    let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
+    locked_token_rule::migrate(&mut lock);
+    locked_token_rule::keep(lock, s.ctx());
     s.end();
 }
 
