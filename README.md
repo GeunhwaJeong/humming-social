@@ -1,10 +1,10 @@
-# humming — Lens Protocol V3 on Move
+# humming — social primitives on Move
 
-A ground-up Move reimplementation of the [Lens Protocol V3](https://github.com/lens-protocol/lens-v3)
-social primitives, designed for the Haneul object chain. This is a
-**redesign, not a translation**: the architecture follows Lens V3's
-primitive/rule decomposition, but every mechanism is rebuilt on the Move
-object model.
+On-chain social primitives for the Haneul object chain: usernames, follow
+graphs, feeds, groups, subscriptions, and paywalls, tied together by a
+composable rule framework. The package decomposes into small primitives
+that each own their state, with access policies attached as rules, and
+every mechanism is built natively on the Move object model.
 
 ```
 sources/
@@ -29,28 +29,29 @@ tests/
 └── humming_tests.move            68 scenario tests (all passing)
 ```
 
-## Architecture mapping
+## Built on the object model
 
-| Lens V3 (Solidity)                          | This package (Move)                                    |
-|---------------------------------------------|--------------------------------------------------------|
-| `NamespaceCore` mappings + username ERC-721  | `Namespace` shared object + `Username` owned object    |
-| `GraphCore` follow mappings                  | `Graph` shared object with nested `Table`s             |
-| `FeedCore` post mapping, hash post ids       | `Feed` shared object, feed-local sequential ids        |
-| `GroupCore` membership mapping               | `Group` shared object                                  |
-| `Account.sol` smart wallet (672 lines)       | Native accounts + optional `Profile` object            |
-| `RulesLib` dynamic dispatch (address+selector) | Hot-potato `Request<OP>` receipts (`rules.move`)     |
-| Rule required/any-of chaining                | Same semantics in `RuleSet<OP>`                        |
-| `RuleBasedPrimitive` inheritance             | `RuleSet` as standalone shared object (Kiosk-style)    |
-| Beacon proxies / upgradeability              | Native package upgrades                                |
-| `ExtraStorageBased` key-value storage        | Dynamic fields (available on every object, free)       |
-| Actions / `ActionHub`                        | Not needed — PTB composability is native               |
-| EIP-712 signatures, source stamps            | Not needed — native tx authorization                   |
+- **Primitives are shared objects.** `Namespace`, `Graph`, `Feed`, and
+  `Group` each hold their state in nested `Table`s; post ids are
+  feed-local and sequential.
+- **Usernames are owned objects.** A `Username` is a transferable object
+  minted from the `Namespace` registry, so names trade like any other
+  asset.
+- **Accounts are native.** The address is the identity; an optional
+  `Profile` object carries metadata. No smart-wallet contract layer.
+- **Rules are hot-potato receipts.** `Request<OP>` receipts stamped by
+  rule modules replace dynamic dispatch; `RuleSet<OP>` is a standalone
+  shared object (Kiosk-style) with required and any-of chaining.
+- **Everything else comes from the platform.** Package upgrades are
+  native, dynamic fields cover extra key-value storage, PTB
+  composability replaces an action registry, and transaction
+  authorization replaces typed off-chain signatures.
 
 ## The rule system
 
-Move has no dynamic dispatch, so Lens V3's "stored contract address +
-selector" rules become **hot-potato receipts** (the `haneul::transfer_policy`
-pattern, hardened):
+Move has no dynamic dispatch, so rule enforcement is built on
+**hot-potato receipts** (the `haneul::transfer_policy` pattern,
+hardened):
 
 1. `request_*` on a primitive returns a primitive-specific **ticket** and a
    generic `Request<OP>` hot potato (paired by a per-transaction key).
@@ -75,32 +76,33 @@ r0: (ticket, req) = graph::request_follow(graph, target)
      graph::execute_follow_gated(graph, graph_rules, target_rules, ticket, req, clock)
 ```
 
-## Deliberate deviations from Lens V3
+## Deliberate design decisions
 
-- **No `Account.sol` port.** EVM needs contract wallets because EOAs can't
-  hold logic; here the address is the identity. Account-manager delegation
-  belongs to wallet infra (multisig / sponsored txs), not the protocol.
-- **No Actions layer.** Third-party modules compose with the primitives
-  directly in PTBs; tipping is just a coin transfer command.
-- **Quotes/reposts don't check parent post rules** (replies do). Matches
-  practical Lens usage; easy to extend via a second `make_parent_request`
-  path if needed.
-- **Follow IDs dropped** (Lens's reusable per-target follow ids exist for
+- **No smart-wallet account layer.** EVM social protocols need contract
+  wallets because EOAs can't hold logic; here the address is the
+  identity. Account-manager delegation belongs to wallet infra
+  (multisig / sponsored txs), not the protocol.
+- **No third-party action registry.** Third-party modules compose with
+  the primitives directly in PTBs; tipping is just a coin transfer
+  command.
+- **Quotes/reposts don't check parent post rules** (replies do). Easy to
+  extend via a second `make_parent_request` path if needed.
+- **No per-follow id objects.** Reusable follow ids only matter for
   follow-NFT semantics; `Username`-style objects can be added later if
-  follow NFTs are wanted).
+  follow NFTs are wanted.
 - **Token-gated rule is a point-in-time possession proof**, same guarantee
   as the EVM `balanceOf` check it mirrors — meaning it can be satisfied
   with funds borrowed and returned inside one transaction. For gates
   where that matters, `locked_token_rule` requires the coins to sit in a
   time-locked deposit that every proof re-extends, so borrowed funds
   cannot qualify.
-- **Group bans are built into the primitive** rather than a separate
-  `BanMemberGroupRule` module.
+- **Group bans are built into the primitive** rather than shipped as a
+  separate rule module.
 
 ## Design history
 
-Changes made in the first hardening round on top of the initial port,
-and why.
+Changes made in the first hardening round on top of the initial
+implementation, and why.
 
 ### 1. `simple_payment_rule::pay` — double-charge fix + change-making
 
@@ -220,7 +222,7 @@ withdraws proceeds.
 
 ### 8. Rule-framework coverage round: any-of & administration (33 → 41 tests)
 
-Half of the Lens rule semantics — the *any-of* quota — and every
+Half of the rule semantics — the *any-of* quota — and every
 administration error path in `rules.move` had no test at all. Eight
 tests close that: either any-of rule admits on its own; an empty stamp
 set aborts; a required stamp does not count toward the any-of quota
@@ -280,9 +282,8 @@ records *who paid for what*; the app decides what that access renders.
   contend. Reposts cannot be paywalled (no content of their own), and
   deleted posts stop selling.
 
-`simple_payment_rule` now routes through `platform::collect` as well —
-the same shape as Lens V3's treasury fee inside its payment rules.
-Thirteen tests (49 → 62) pin the fee split on every path, the ceiling,
+`simple_payment_rule` now routes through `platform::collect` as well,
+so every payment path shares the one fee lever. Thirteen tests (49 → 62) pin the fee split on every path, the ceiling,
 the walk-to-zero flow, subscription stacking/lapse/re-subscribe/gift,
 the subscriber-gated reply E2E, and every paywall error path.
 
@@ -296,8 +297,7 @@ product-level findings, fixed here (62 → 68 tests):
   twice — and `subscriber_only_rule`'s config held a single tier ID,
   making "silver OR gold subscribers" (the basic Patreon shape)
   impossible. The config now holds a `vector<ID>` of accepted tiers:
-  one instance, any-of-these-tiers semantics — the role Lens V3's
-  configSalt plays for its multi-instance rules. `token_gated_rule`
+  one instance, any-of-these-tiers semantics. `token_gated_rule`
   had the same limitation across coin types; its witness is now
   generic over the coin (`TokenGatedRule<T>`), so "hold coin X OR
   coin Y" is two any-of entries in one set.
@@ -322,7 +322,4 @@ haneul move test   # 68 tests
 
 ## License
 
-Apache-2.0. This package contains no code from the Lens V3 repository
-(which is GPL-3.0-only); it is an independent implementation of the
-publicly documented protocol design, written in a different language with
-different mechanisms.
+Apache-2.0.
