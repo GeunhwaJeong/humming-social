@@ -32,6 +32,23 @@ tests/
 └── *_tests.move        13 per-module suites, 109 scenario tests (all passing)
 ```
 
+## Deployments
+
+Live on Haneul mainnet (chain id `a0053d9e`), published as package
+version 1 in transaction
+`BtFFMEhThk47LSRhjywmU7hPWHRWht61bYVyrkMvMzMc`.
+
+| Object | ID |
+|--------|----|
+| Package | `0x0a5ad6be4dfe8d86fcb675442fbcce622085b68e4a8abd81a897ef725fa4a348` |
+| `Feed` (shared) | `0xb7e76913c0600440e860a143c6ec5604186d5866a9e693aab2a4faa618d3e13a` |
+| `RuleSet<CreatePostOp>` (shared) | `0x76487f01752f41369dfed388cf48a55e0f0c1deb6360010533a3c42f7fcfeace` |
+| `FeeConfig` (shared) | `0xa95599b9e52583fa2c532000a382c5004da7a9d40665313273c2346003d06511` |
+| `PrefsRegistry` (shared) | `0xe46f78a01e1e5100bfe489aac7a4fefdca34b19b1f24160450715f2ab476abeb` |
+
+Machine-readable publish metadata is tracked in
+[`Published.toml`](Published.toml).
+
 ## Built on the object model
 
 - **Primitives are shared objects.** `Namespace`, `Graph`, `Feed`, and
