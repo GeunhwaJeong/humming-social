@@ -18,6 +18,8 @@ sources/
 ├── profile.move        Optional profile metadata object
 ├── subscriptions.move  Prepaid extendable subscriptions (the Patreon primitive)
 ├── paid_posts.move     Per-post paywalls (pay once to unlock)
+├── tips.move           Tips to a creator or post, with an indexable event trail
+├── creator_prefs.move  Creator-owned serving preferences (e.g. subscriber-only profile)
 └── rule_impls/
     ├── simple_payment_rule.move      Paid follow/join/post (any coin type)
     ├── token_gated_rule.move         Token-gated interactions (point-in-time)
@@ -26,7 +28,8 @@ sources/
     ├── followers_only_rule.move      Followers-only replies
     └── subscriber_only_rule.move     Active-subscriber-only interactions
 tests/
-└── humming_tests.move            68 scenario tests (all passing)
+├── test_helpers.move   Shared scenario fixtures
+└── *_tests.move        13 per-module suites, 109 scenario tests (all passing)
 ```
 
 ## Built on the object model
@@ -316,8 +319,8 @@ product-level findings, fixed here (62 → 68 tests):
 ## Build & test
 
 ```bash
-haneul move build
-haneul move test   # 68 tests
+haneul move build --build-env mainnet
+haneul move test --build-env mainnet   # 109 tests
 ```
 
 ## License
