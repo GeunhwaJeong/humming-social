@@ -27,10 +27,11 @@ use sui::display;
 use sui::package;
 use sui::transfer_policy;
 
-/// Launch fee: 5%. The ceiling (10%) is a compile-time constant in
-/// `humming::platform`; the plan is to walk this down over time, with
-/// the `FeeConfigCap` eventually handed to governance.
-const INITIAL_FEE_BPS: u64 = 500;
+/// Launch fee: 0%. Creators keep everything at launch; the lever can be
+/// raised later through `FeeConfigCap`, but never above the compile-time
+/// ceiling in `humming::platform` (10%). The cap is meant to be handed to
+/// governance eventually.
+const INITIAL_FEE_BPS: u64 = 0;
 
 /// One-time witness. Claiming the `Publisher` with it is what later
 /// authorizes creating `Display` and `TransferPolicy` objects for the

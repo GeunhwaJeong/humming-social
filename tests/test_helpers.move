@@ -15,6 +15,7 @@ use humming::group;
 use humming::humming::init_for_testing;
 use humming::locked_token_rule;
 use humming::namespace;
+use humming::platform::{Self, FeeConfig, FeeConfigCap};
 use humming::rules::{RuleSet, RuleSetCap};
 use humming::simple_payment_rule;
 use humming::token_gated_rule;
@@ -47,11 +48,19 @@ public fun new_clock(s: &mut Scenario): Clock {
 }
 
 /// Runs the package initializer, creating (among the rest) the
-/// canonical `FeeConfig` at 5% with ADMIN as treasury. Needed by any
-/// test that moves money.
+/// canonical `FeeConfig` with ADMIN as treasury, then sets the fee to 5%
+/// so the money tests exercise a non-trivial split. The initializer
+/// itself launches at 0% (see `humming::humming`); `init_tests` covers
+/// that default.
 public fun setup_platform(s: &mut Scenario) {
     s.next_tx(ADMIN);
     init_for_testing(s.ctx());
+    s.next_tx(ADMIN);
+    let mut fee_config = s.take_shared<FeeConfig>();
+    let cap = s.take_from_sender<FeeConfigCap>();
+    platform::set_fee_bps(&mut fee_config, &cap, 500);
+    s.return_to_sender(cap);
+    ts::return_shared(fee_config);
 }
 
 public fun setup_namespace(s: &mut Scenario) {

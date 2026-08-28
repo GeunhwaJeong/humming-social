@@ -38,10 +38,10 @@ fun init_creates_publisher_display_and_policy() {
         // The policy is shared (kiosks need it at purchase time); its
         // cap stays with the deployer for adding rules later.
         let policy = s.take_shared<TransferPolicy<Username>>();
-        // The canonical fee config: 5% launch fee, deployer treasury,
+        // The canonical fee config: 0% launch fee, deployer treasury,
         // lever with the deployer, breaker open.
         let fee_config = s.take_shared<FeeConfig>();
-        assert!(platform::fee_bps(&fee_config) == 500);
+        assert!(platform::fee_bps(&fee_config) == 0);
         assert!(platform::treasury(&fee_config) == ADMIN);
         assert!(!platform::is_paused(&fee_config));
         let fee_cap = s.take_from_sender<FeeConfigCap>();
