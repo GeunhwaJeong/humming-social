@@ -102,6 +102,25 @@ fun fee_above_ceiling_rejected() {
     s.end();
 }
 
+/// The ceiling itself is a legal value: `<=`, not `<`. Pins the boundary
+/// so a future tweak of the comparison cannot silently shrink the range.
+#[test]
+fun fee_at_ceiling_accepted() {
+    let mut s = ts::begin(ADMIN);
+    setup_platform(&mut s);
+
+    s.next_tx(ADMIN);
+    let mut fee_config = s.take_shared<FeeConfig>();
+    let cap = s.take_from_sender<FeeConfigCap>();
+    platform::set_fee_bps(&mut fee_config, &cap, platform::max_fee_bps());
+    assert!(platform::fee_bps(&fee_config) == platform::max_fee_bps());
+    // 5% of 10_000 units is 500 at the ceiling.
+    assert!(platform::compute_fee(&fee_config, 10_000) == 500);
+    s.return_to_sender(cap);
+    ts::return_shared(fee_config);
+    s.end();
+}
+
 // === Circuit breaker ===
 
 fun pause(s: &mut Scenario) {

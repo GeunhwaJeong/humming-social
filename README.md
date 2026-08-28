@@ -9,7 +9,7 @@ every mechanism is built natively on the Move object model.
 ```
 sources/
 ├── humming.move        Package init: Publisher, Display, TransferPolicy, FeeConfig
-├── platform.move       Platform fee: one canonical lever, 10% hard ceiling
+├── platform.move       Platform fee: one canonical lever, 5% hard ceiling
 ├── rules.move          Rule framework (hot-potato receipts, RuleSet objects)
 ├── namespace.move      Username registry + transferable Username objects
 ├── graph.move          Follow graph (graph-level + per-account follow rules)
@@ -278,12 +278,16 @@ records *who paid for what*; the app decides what that access renders.
 - **`platform`** — the single fee lever. `new` is package-internal and
   called once from `init`, so a `&FeeConfig` parameter can only ever
   be the canonical object: a zero-fee lookalike cannot be wired into a
-  payment path. `MAX_FEE_BPS` (10%) is a compile-time ceiling no cap
+  payment path. `MAX_FEE_BPS` (5%) is a compile-time ceiling no cap
   holder can cross — creators price against a bounded worst case, not
-  an announcement. The launch fee is 5%; the plan is to walk it down,
-  and because the lever is an ordinary transferable `FeeConfigCap`,
-  handing it to a governance contract later is a transfer, not an
-  upgrade. Fee math uses a u128 intermediate (u64 `amount * bps`
+  an announcement. The launch fee is 0%; it can be raised later through
+  the cap but never past the ceiling, and because the lever is an
+  ordinary transferable `FeeConfigCap`, handing it to a governance
+  contract later is a transfer, not an upgrade. Note that a
+  compile-time ceiling is only as strong as the package's upgrade
+  policy: keep the `UpgradeCap` under a restrictive policy (or make the
+  package immutable) once the deployment settles, otherwise an upgrade
+  could raise the constant. Fee math uses a u128 intermediate (u64 `amount * bps`
   overflows well inside the coin supply) and floors in the creator's
   favor.
 - **`subscriptions`** — the Patreon primitive. An object chain has no

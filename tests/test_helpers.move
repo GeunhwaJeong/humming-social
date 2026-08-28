@@ -49,7 +49,8 @@ public fun new_clock(s: &mut Scenario): Clock {
 
 /// Runs the package initializer, creating (among the rest) the
 /// canonical `FeeConfig` with ADMIN as treasury, then sets the fee to 5%
-/// so the money tests exercise a non-trivial split. The initializer
+/// (exactly `MAX_FEE_BPS`) so the money tests exercise a non-trivial
+/// split at the ceiling boundary. The initializer
 /// itself launches at 0% (see `humming::humming`); `init_tests` covers
 /// that default.
 public fun setup_platform(s: &mut Scenario) {

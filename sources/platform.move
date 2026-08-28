@@ -47,8 +47,9 @@ const ENotProposedRecipient: u64 = 7;
 const ETransferNotAccepted: u64 = 8;
 const ECannotTransferToSelf: u64 = 9;
 
-/// Hard ceiling on the platform fee: 10%.
-const MAX_FEE_BPS: u64 = 1_000;
+/// Hard ceiling on the platform fee: 5%. Creators are told the fee
+/// starts at 0% and can never exceed this; the number is the promise.
+const MAX_FEE_BPS: u64 = 500;
 const BPS_DENOMINATOR: u64 = 10_000;
 
 public struct FeeConfig has key {

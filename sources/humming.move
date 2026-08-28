@@ -29,7 +29,7 @@ use sui::transfer_policy;
 
 /// Launch fee: 0%. Creators keep everything at launch; the lever can be
 /// raised later through `FeeConfigCap`, but never above the compile-time
-/// ceiling in `humming::platform` (10%). The cap is meant to be handed to
+/// ceiling in `humming::platform` (5%). The cap is meant to be handed to
 /// governance eventually.
 const INITIAL_FEE_BPS: u64 = 0;
 
