@@ -11,7 +11,7 @@ use humming::followers_only_rule;
 use humming::graph::Graph;
 use humming::rules::{RuleSet, RuleSetCap};
 use humming::test_helpers::{str, new_clock, setup_graph, setup_feed, create_simple_post, follow};
-use haneul::test_scenario::{Self as ts};
+use sui::test_scenario::{Self as ts};
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;

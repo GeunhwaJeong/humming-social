@@ -8,8 +8,8 @@ module humming::creator_prefs_tests;
 use humming::creator_prefs::{Self, PrefsRegistry};
 use humming::profile::{Self, Profile};
 use humming::test_helpers::{str, new_clock, setup_creator_prefs};
-use haneul::event;
-use haneul::test_scenario::{Self as ts};
+use sui::event;
+use sui::test_scenario::{Self as ts};
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;

@@ -20,8 +20,8 @@
 /// from `subscriptions` / `paid_posts` state.
 module humming::creator_prefs;
 
-use haneul::event;
-use haneul::table::{Self, Table};
+use sui::event;
+use sui::table::{Self, Table};
 use humming::platform::FeeConfigCap;
 use humming::rules;
 

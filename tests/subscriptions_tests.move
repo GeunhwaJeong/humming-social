@@ -20,9 +20,9 @@ use humming::test_helpers::{
     setup_group,
     create_simple_post,
 };
-use haneul::coin::{Self, Coin};
-use haneul::haneul::HANEUL;
-use haneul::test_scenario::{Self as ts};
+use sui::coin::{Self, Coin};
+use sui::sui::SUI;
+use sui::test_scenario::{Self as ts};
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;
@@ -40,16 +40,16 @@ fun subscription_lifecycle() {
     // Bob offers a tier: 1000 per day.
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b"ipfs://tier"), s.ctx());
+        let cap = subscriptions::create<SUI>(1000, DAY_MS, str(b"ipfs://tier"), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
 
     // Alice subscribes, then immediately renews: periods stack.
     s.next_tx(ALICE);
     {
-        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let mut tier = s.take_shared<Tier<SUI>>();
         let fee_config = s.take_shared<FeeConfig>();
-        let mut payment = coin::mint_for_testing<HANEUL>(2000, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(2000, s.ctx());
         subscriptions::subscribe(&mut tier, &fee_config, ALICE, 1000, &mut payment, &clock, s.ctx());
         assert!(subscriptions::is_active_subscriber(&tier, ALICE, &clock));
         assert!(subscriptions::expires_ms(&tier, ALICE).destroy_some() == DAY_MS);
@@ -64,8 +64,8 @@ fun subscription_lifecycle() {
     // Bob received 950 per period (5% platform cut).
     s.next_tx(BOB);
     {
-        let c1 = s.take_from_sender<Coin<HANEUL>>();
-        let c2 = s.take_from_sender<Coin<HANEUL>>();
+        let c1 = s.take_from_sender<Coin<SUI>>();
+        let c2 = s.take_from_sender<Coin<SUI>>();
         assert!(c1.value() + c2.value() == 1900);
         s.return_to_sender(c1);
         s.return_to_sender(c2);
@@ -74,12 +74,12 @@ fun subscription_lifecycle() {
     // Past the prepaid time the subscription lapses by itself...
     s.next_tx(ALICE);
     {
-        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let mut tier = s.take_shared<Tier<SUI>>();
         let fee_config = s.take_shared<FeeConfig>();
         clock.set_for_testing(2 * DAY_MS + 1);
         assert!(!subscriptions::is_active_subscriber(&tier, ALICE, &clock));
         // ...and re-subscribing starts from now, not the stale expiry.
-        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
         subscriptions::subscribe(&mut tier, &fee_config, ALICE, 1000, &mut payment, &clock, s.ctx());
         assert!(subscriptions::expires_ms(&tier, ALICE).destroy_some() == 3 * DAY_MS + 1);
         assert!(subscriptions::subscriber_count(&tier) == 1);
@@ -100,16 +100,16 @@ fun subscription_gift() {
 
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        let cap = subscriptions::create<SUI>(1000, DAY_MS, str(b""), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
 
     // Alice pays; Carol gets the subscription.
     s.next_tx(ALICE);
     {
-        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let mut tier = s.take_shared<Tier<SUI>>();
         let fee_config = s.take_shared<FeeConfig>();
-        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
         subscriptions::subscribe(&mut tier, &fee_config, CAROL, 1000, &mut payment, &clock, s.ctx());
         assert!(subscriptions::is_active_subscriber(&tier, CAROL, &clock));
         assert!(!subscriptions::is_active_subscriber(&tier, ALICE, &clock));
@@ -131,12 +131,12 @@ fun subscription_closed_tier_rejects() {
 
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        let cap = subscriptions::create<SUI>(1000, DAY_MS, str(b""), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
     s.next_tx(BOB);
     {
-        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let mut tier = s.take_shared<Tier<SUI>>();
         let cap = s.take_from_sender<TierCap>();
         subscriptions::set_active(&mut tier, &cap, false);
         s.return_to_sender(cap);
@@ -144,9 +144,9 @@ fun subscription_closed_tier_rejects() {
     };
 
     s.next_tx(ALICE);
-    let mut tier = s.take_shared<Tier<HANEUL>>();
+    let mut tier = s.take_shared<Tier<SUI>>();
     let fee_config = s.take_shared<FeeConfig>();
-    let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
     subscriptions::subscribe(&mut tier, &fee_config, ALICE, 1000, &mut payment, &clock, s.ctx());
     payment.destroy_zero();
     ts::return_shared(tier);
@@ -166,13 +166,13 @@ fun subscribe_price_mismatch_aborts() {
 
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        let cap = subscriptions::create<SUI>(1000, DAY_MS, str(b""), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
     // Bob raises the price to 2000 before Alice's purchase lands.
     s.next_tx(BOB);
     {
-        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let mut tier = s.take_shared<Tier<SUI>>();
         let cap = s.take_from_sender<TierCap>();
         subscriptions::set_price(&mut tier, &cap, 2000);
         s.return_to_sender(cap);
@@ -181,9 +181,9 @@ fun subscribe_price_mismatch_aborts() {
 
     // Alice still expects 1000.
     s.next_tx(ALICE);
-    let mut tier = s.take_shared<Tier<HANEUL>>();
+    let mut tier = s.take_shared<Tier<SUI>>();
     let fee_config = s.take_shared<FeeConfig>();
-    let mut payment = coin::mint_for_testing<HANEUL>(2000, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(2000, s.ctx());
     subscriptions::subscribe(&mut tier, &fee_config, ALICE, 1000, &mut payment, &clock, s.ctx());
     payment.burn_for_testing();
     ts::return_shared(tier);
@@ -201,7 +201,7 @@ fun subscription_period_too_long_rejected() {
 
     s.next_tx(BOB);
     // One millisecond over the 10-year bound.
-    let cap = subscriptions::create<HANEUL>(1000, 315_360_000_001, str(b""), s.ctx());
+    let cap = subscriptions::create<SUI>(1000, 315_360_000_001, str(b""), s.ctx());
     transfer::public_transfer(cap, BOB);
     s.end();
 }
@@ -215,12 +215,12 @@ fun tier_recipient_change_redirects_proceeds() {
 
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        let cap = subscriptions::create<SUI>(1000, DAY_MS, str(b""), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
     s.next_tx(BOB);
     {
-        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let mut tier = s.take_shared<Tier<SUI>>();
         let cap = s.take_from_sender<TierCap>();
         subscriptions::set_recipient(&mut tier, &cap, CAROL);
         assert!(subscriptions::recipient(&tier) == CAROL);
@@ -230,9 +230,9 @@ fun tier_recipient_change_redirects_proceeds() {
 
     s.next_tx(ALICE);
     {
-        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let mut tier = s.take_shared<Tier<SUI>>();
         let fee_config = s.take_shared<FeeConfig>();
-        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
         subscriptions::subscribe(&mut tier, &fee_config, ALICE, 1000, &mut payment, &clock, s.ctx());
         payment.destroy_zero();
         ts::return_shared(tier);
@@ -242,7 +242,7 @@ fun tier_recipient_change_redirects_proceeds() {
     // Carol — not Bob — received the creator share.
     s.next_tx(CAROL);
     {
-        let proceeds = s.take_from_sender<Coin<HANEUL>>();
+        let proceeds = s.take_from_sender<Coin<SUI>>();
         assert!(proceeds.value() == 950);
         s.return_to_sender(proceeds);
     };
@@ -264,7 +264,7 @@ fun subscriber_only_reply() {
 
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        let cap = subscriptions::create<SUI>(1000, DAY_MS, str(b""), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
     let p1 = create_simple_post(&mut s, BOB, b"ipfs://subscriber-gated", &clock);
@@ -278,7 +278,7 @@ fun subscriber_only_reply() {
     s.next_tx(BOB);
     {
         let f = s.take_shared<Feed>();
-        let tier = s.take_shared<Tier<HANEUL>>();
+        let tier = s.take_shared<Tier<SUI>>();
         let set_id = feed::post_rules_of(&f, p1).destroy_some();
         let mut set = ts::take_shared_by_id<RuleSet<InteractPostOp>>(&s, set_id);
         let cap = s.take_from_sender<RuleSetCap>();
@@ -292,9 +292,9 @@ fun subscriber_only_reply() {
     // Alice subscribes...
     s.next_tx(ALICE);
     {
-        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let mut tier = s.take_shared<Tier<SUI>>();
         let fee_config = s.take_shared<FeeConfig>();
-        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
         subscriptions::subscribe(&mut tier, &fee_config, ALICE, 1000, &mut payment, &clock, s.ctx());
         payment.destroy_zero();
         ts::return_shared(tier);
@@ -305,7 +305,7 @@ fun subscriber_only_reply() {
     s.next_tx(ALICE);
     {
         let mut f = s.take_shared<Feed>();
-        let tier = s.take_shared<Tier<HANEUL>>();
+        let tier = s.take_shared<Tier<SUI>>();
         let feed_set = ts::take_shared_by_id<RuleSet<CreatePostOp>>(&s, feed::feed_rules_id(&f));
         let post_set_id = feed::post_rules_of(&f, p1).destroy_some();
         let post_set = ts::take_shared_by_id<RuleSet<InteractPostOp>>(&s, post_set_id);
@@ -349,7 +349,7 @@ fun subscriber_only_rejects_non_subscriber() {
 
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        let cap = subscriptions::create<SUI>(1000, DAY_MS, str(b""), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
     let p1 = create_simple_post(&mut s, BOB, b"ipfs://subscriber-gated", &clock);
@@ -363,7 +363,7 @@ fun subscriber_only_rejects_non_subscriber() {
     s.next_tx(BOB);
     {
         let f = s.take_shared<Feed>();
-        let tier = s.take_shared<Tier<HANEUL>>();
+        let tier = s.take_shared<Tier<SUI>>();
         let set_id = feed::post_rules_of(&f, p1).destroy_some();
         let mut set = ts::take_shared_by_id<RuleSet<InteractPostOp>>(&s, set_id);
         let cap = s.take_from_sender<RuleSetCap>();
@@ -377,7 +377,7 @@ fun subscriber_only_rejects_non_subscriber() {
     // Carol never subscribed; her prove must abort.
     s.next_tx(CAROL);
     let mut f = s.take_shared<Feed>();
-    let tier = s.take_shared<Tier<HANEUL>>();
+    let tier = s.take_shared<Tier<SUI>>();
     let feed_set = ts::take_shared_by_id<RuleSet<CreatePostOp>>(&s, feed::feed_rules_id(&f));
     let post_set_id = feed::post_rules_of(&f, p1).destroy_some();
     let post_set = ts::take_shared_by_id<RuleSet<InteractPostOp>>(&s, post_set_id);
@@ -420,24 +420,24 @@ fun subscriber_only_multi_tier_any_admits() {
     // Bob offers silver (1000/day) and gold (2000/day) tiers.
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b"silver"), s.ctx());
+        let cap = subscriptions::create<SUI>(1000, DAY_MS, str(b"silver"), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
     s.next_tx(BOB);
     let silver_id = {
-        let t = s.take_shared<Tier<HANEUL>>();
+        let t = s.take_shared<Tier<SUI>>();
         let id = object::id(&t);
         ts::return_shared(t);
         id
     };
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(2000, DAY_MS, str(b"gold"), s.ctx());
+        let cap = subscriptions::create<SUI>(2000, DAY_MS, str(b"gold"), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
     s.next_tx(BOB);
     let gold_id = {
-        let t = s.take_shared<Tier<HANEUL>>();
+        let t = s.take_shared<Tier<SUI>>();
         let id = object::id(&t);
         ts::return_shared(t);
         id
@@ -456,9 +456,9 @@ fun subscriber_only_multi_tier_any_admits() {
     // Alice subscribes silver and joins with a silver proof.
     s.next_tx(ALICE);
     {
-        let mut tier = ts::take_shared_by_id<Tier<HANEUL>>(&s, silver_id);
+        let mut tier = ts::take_shared_by_id<Tier<SUI>>(&s, silver_id);
         let fee_config = s.take_shared<FeeConfig>();
-        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
         subscriptions::subscribe(&mut tier, &fee_config, ALICE, 1000, &mut payment, &clock, s.ctx());
         payment.destroy_zero();
         ts::return_shared(tier);
@@ -468,7 +468,7 @@ fun subscriber_only_multi_tier_any_admits() {
     {
         let mut g = s.take_shared<Group>();
         let set = s.take_shared<RuleSet<JoinGroupOp>>();
-        let tier = ts::take_shared_by_id<Tier<HANEUL>>(&s, silver_id);
+        let tier = ts::take_shared_by_id<Tier<SUI>>(&s, silver_id);
         let (ticket, mut req) = group::request_join(&g, s.ctx());
         subscriber_only_rule::prove(&set, &mut req, &tier, &clock);
         group::execute_join(&mut g, &set, ticket, req, &clock);
@@ -481,9 +481,9 @@ fun subscriber_only_multi_tier_any_admits() {
     // Carol subscribes gold and joins with a gold proof.
     s.next_tx(CAROL);
     {
-        let mut tier = ts::take_shared_by_id<Tier<HANEUL>>(&s, gold_id);
+        let mut tier = ts::take_shared_by_id<Tier<SUI>>(&s, gold_id);
         let fee_config = s.take_shared<FeeConfig>();
-        let mut payment = coin::mint_for_testing<HANEUL>(2000, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(2000, s.ctx());
         subscriptions::subscribe(&mut tier, &fee_config, CAROL, 2000, &mut payment, &clock, s.ctx());
         payment.destroy_zero();
         ts::return_shared(tier);
@@ -493,7 +493,7 @@ fun subscriber_only_multi_tier_any_admits() {
     {
         let mut g = s.take_shared<Group>();
         let set = s.take_shared<RuleSet<JoinGroupOp>>();
-        let tier = ts::take_shared_by_id<Tier<HANEUL>>(&s, gold_id);
+        let tier = ts::take_shared_by_id<Tier<SUI>>(&s, gold_id);
         let (ticket, mut req) = group::request_join(&g, s.ctx());
         subscriber_only_rule::prove(&set, &mut req, &tier, &clock);
         group::execute_join(&mut g, &set, ticket, req, &clock);
@@ -519,12 +519,12 @@ fun subscriber_only_foreign_tier_rejected() {
     // Gate accepts only the silver tier...
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b"silver"), s.ctx());
+        let cap = subscriptions::create<SUI>(1000, DAY_MS, str(b"silver"), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
     s.next_tx(BOB);
     let silver_id = {
-        let t = s.take_shared<Tier<HANEUL>>();
+        let t = s.take_shared<Tier<SUI>>();
         let id = object::id(&t);
         ts::return_shared(t);
         id
@@ -541,14 +541,14 @@ fun subscriber_only_foreign_tier_rejected() {
     // ...but Alice subscribes to an unrelated bronze tier.
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(10, DAY_MS, str(b"bronze"), s.ctx());
+        let cap = subscriptions::create<SUI>(10, DAY_MS, str(b"bronze"), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
     s.next_tx(ALICE);
     let bronze_id = {
-        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let mut tier = s.take_shared<Tier<SUI>>();
         let fee_config = s.take_shared<FeeConfig>();
-        let mut payment = coin::mint_for_testing<HANEUL>(10, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(10, s.ctx());
         subscriptions::subscribe(&mut tier, &fee_config, ALICE, 10, &mut payment, &clock, s.ctx());
         payment.destroy_zero();
         let id = object::id(&tier);
@@ -560,7 +560,7 @@ fun subscriber_only_foreign_tier_rejected() {
     s.next_tx(ALICE);
     let mut g = s.take_shared<Group>();
     let set = s.take_shared<RuleSet<JoinGroupOp>>();
-    let tier = ts::take_shared_by_id<Tier<HANEUL>>(&s, bronze_id);
+    let tier = ts::take_shared_by_id<Tier<SUI>>(&s, bronze_id);
     let (ticket, mut req) = group::request_join(&g, s.ctx());
     subscriber_only_rule::prove(&set, &mut req, &tier, &clock);
     group::execute_join(&mut g, &set, ticket, req, &clock);

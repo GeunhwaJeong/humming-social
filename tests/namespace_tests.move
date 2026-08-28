@@ -10,7 +10,7 @@ use humming::namespace::{Self, CreateUsernameOp, Namespace, Username};
 use humming::rules::RuleSet;
 use humming::test_helpers::{str, setup_namespace};
 use humming::username_validation_rule;
-use haneul::test_scenario::{Self as ts};
+use sui::test_scenario::{Self as ts};
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;

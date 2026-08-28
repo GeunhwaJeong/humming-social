@@ -33,8 +33,8 @@
 module humming::platform;
 
 use humming::rules;
-use haneul::coin::Coin;
-use haneul::event;
+use sui::coin::Coin;
+use sui::event;
 
 const EFeeTooHigh: u64 = 0;
 const EWrongCap: u64 = 1;

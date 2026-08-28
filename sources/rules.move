@@ -7,7 +7,7 @@
 /// a stored contract address + function selector called at interaction
 /// time. Move has no dynamic dispatch, so this module uses the
 /// hot-potato receipt pattern instead (the same family as
-/// `haneul::transfer_policy`):
+/// `sui::transfer_policy`):
 ///
 /// 1. A primitive issues a `Request<OP>` hot potato when an interaction
 ///    starts (`request_*` functions).
@@ -29,8 +29,8 @@ module humming::rules;
 
 use std::string::String;
 use std::type_name::{Self, TypeName};
-use haneul::bag::{Self, Bag};
-use haneul::vec_set::{Self, VecSet};
+use sui::bag::{Self, Bag};
+use sui::vec_set::{Self, VecSet};
 
 const ERuleAlreadyAdded: u64 = 0;
 const ERuleNotFound: u64 = 1;

@@ -10,9 +10,9 @@ module humming::group;
 
 use humming::rules::{Self, Request, RuleSet, RuleSetCap};
 use std::string::String;
-use haneul::clock::Clock;
-use haneul::event;
-use haneul::table::{Self, Table};
+use sui::clock::Clock;
+use sui::event;
+use sui::table::{Self, Table};
 
 const EAlreadyMember: u64 = 0;
 const ENotMember: u64 = 1;

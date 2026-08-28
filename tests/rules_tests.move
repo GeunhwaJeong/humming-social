@@ -12,8 +12,8 @@ use humming::simple_payment_rule;
 use humming::test_helpers::{str, filler_rule, setup_graph, setup_group};
 use humming::token_gated_rule;
 use std::string::String;
-use haneul::haneul::HANEUL;
-use haneul::test_scenario::{Self as ts};
+use sui::sui::SUI;
+use sui::test_scenario::{Self as ts};
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;
@@ -34,8 +34,8 @@ fun rules_duplicate_add_aborts() {
     s.next_tx(ADMIN);
     let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
     let cap = s.take_from_sender<RuleSetCap>();
-    token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, true);
-    token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 900, false);
+    token_gated_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 500, true);
+    token_gated_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 900, false);
     s.return_to_sender(cap);
     ts::return_shared(set);
     s.end();
@@ -69,7 +69,7 @@ fun rules_foreign_cap_rejected() {
     let alice_set_id = graph::follow_rules_of(&g, ALICE).destroy_some();
     let mut alice_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, alice_set_id);
     let bob_cap = s.take_from_sender<RuleSetCap>();
-    simple_payment_rule::add<FollowOp, HANEUL>(&mut alice_set, &bob_cap, 1, BOB, true);
+    simple_payment_rule::add<FollowOp, SUI>(&mut alice_set, &bob_cap, 1, BOB, true);
     s.return_to_sender(bob_cap);
     ts::return_shared(alice_set);
     ts::return_shared(g);
@@ -87,8 +87,8 @@ fun rules_remove_missing_rule_aborts() {
     s.next_tx(ADMIN);
     let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
     let cap = s.take_from_sender<RuleSetCap>();
-    simple_payment_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 1000, ADMIN, true);
-    token_gated_rule::remove<JoinGroupOp, HANEUL>(&mut set, &cap);
+    simple_payment_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 1000, ADMIN, true);
+    token_gated_rule::remove<JoinGroupOp, SUI>(&mut set, &cap);
     s.return_to_sender(cap);
     ts::return_shared(set);
     s.end();

@@ -22,8 +22,8 @@
 /// monetization path behind the protocol's single fee lever.
 module humming::tips;
 
-use haneul::coin::Coin;
-use haneul::event;
+use sui::coin::Coin;
+use sui::event;
 use humming::feed::{Self, Feed};
 use humming::platform::{Self, FeeConfig};
 

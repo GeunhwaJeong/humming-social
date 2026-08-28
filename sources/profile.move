@@ -13,8 +13,8 @@
 module humming::profile;
 
 use std::string::String;
-use haneul::clock::Clock;
-use haneul::event;
+use sui::clock::Clock;
+use sui::event;
 
 public struct Profile has key {
     id: UID,

@@ -12,8 +12,8 @@ module humming::namespace;
 
 use humming::rules::{Self, Request, RuleSet, RuleSetCap};
 use std::string::String;
-use haneul::event;
-use haneul::table::{Self, Table};
+use sui::event;
+use sui::table::{Self, Table};
 
 const ENameTaken: u64 = 0;
 const EInvalidName: u64 = 1;

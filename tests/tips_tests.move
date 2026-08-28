@@ -9,10 +9,10 @@ use humming::feed::Feed;
 use humming::platform::FeeConfig;
 use humming::test_helpers::{new_clock, setup_platform, setup_feed, create_simple_post};
 use humming::tips;
-use haneul::coin::{Self, Coin};
-use haneul::event;
-use haneul::haneul::HANEUL;
-use haneul::test_scenario::{Self as ts};
+use sui::coin::{Self, Coin};
+use sui::event;
+use sui::sui::SUI;
+use sui::test_scenario::{Self as ts};
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;
@@ -33,7 +33,7 @@ fun tips_flow_and_events() {
     {
         let f = s.take_shared<Feed>();
         let fee_config = s.take_shared<FeeConfig>();
-        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
         tips::tip_post(&fee_config, &f, post, 1000, &mut payment, s.ctx());
         payment.burn_for_testing();
         ts::return_shared(fee_config);
@@ -50,7 +50,7 @@ fun tips_flow_and_events() {
     s.next_tx(BOB);
     {
         let fee_config = s.take_shared<FeeConfig>();
-        let mut payment = coin::mint_for_testing<HANEUL>(200, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(200, s.ctx());
         tips::tip(&fee_config, CAROL, 200, &mut payment, s.ctx());
         payment.burn_for_testing();
         ts::return_shared(fee_config);
@@ -63,10 +63,10 @@ fun tips_flow_and_events() {
     // Creator payouts arrived net of the 5% platform cut.
     s.next_tx(ADMIN);
     {
-        let alice_cut = s.take_from_address<Coin<HANEUL>>(ALICE);
+        let alice_cut = s.take_from_address<Coin<SUI>>(ALICE);
         assert!(alice_cut.value() == 950);
         ts::return_to_address(ALICE, alice_cut);
-        let carol_cut = s.take_from_address<Coin<HANEUL>>(CAROL);
+        let carol_cut = s.take_from_address<Coin<SUI>>(CAROL);
         assert!(carol_cut.value() == 190);
         ts::return_to_address(CAROL, carol_cut);
     };
@@ -83,7 +83,7 @@ fun tips_self_tip_aborts() {
 
     s.next_tx(BOB);
     let fee_config = s.take_shared<FeeConfig>();
-    let mut payment = coin::mint_for_testing<HANEUL>(100, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(100, s.ctx());
     tips::tip(&fee_config, BOB, 100, &mut payment, s.ctx());
     payment.burn_for_testing();
     ts::return_shared(fee_config);
@@ -98,7 +98,7 @@ fun tips_zero_amount_aborts() {
 
     s.next_tx(BOB);
     let fee_config = s.take_shared<FeeConfig>();
-    let mut payment = coin::mint_for_testing<HANEUL>(100, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(100, s.ctx());
     tips::tip(&fee_config, ALICE, 0, &mut payment, s.ctx());
     payment.burn_for_testing();
     ts::return_shared(fee_config);
@@ -115,7 +115,7 @@ fun tips_unknown_post_aborts() {
     s.next_tx(BOB);
     let f = s.take_shared<Feed>();
     let fee_config = s.take_shared<FeeConfig>();
-    let mut payment = coin::mint_for_testing<HANEUL>(100, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(100, s.ctx());
     tips::tip_post(&fee_config, &f, 999, 100, &mut payment, s.ctx());
     payment.burn_for_testing();
     ts::return_shared(fee_config);

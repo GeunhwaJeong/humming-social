@@ -23,9 +23,9 @@ module humming::humming;
 
 use humming::namespace::Username;
 use humming::platform;
-use haneul::display;
-use haneul::package;
-use haneul::transfer_policy;
+use sui::display;
+use sui::package;
+use sui::transfer_policy;
 
 /// Launch fee: 5%. The ceiling (10%) is a compile-time constant in
 /// `humming::platform`; the plan is to walk this down over time, with

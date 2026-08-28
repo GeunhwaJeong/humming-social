@@ -21,10 +21,10 @@ module humming::subscriptions;
 use humming::platform::{Self, FeeConfig};
 use humming::rules;
 use std::string::String;
-use haneul::clock::Clock;
-use haneul::coin::Coin;
-use haneul::event;
-use haneul::table::{Self, Table};
+use sui::clock::Clock;
+use sui::coin::Coin;
+use sui::event;
+use sui::table::{Self, Table};
 
 const ETierClosed: u64 = 0;
 const EWrongCap: u64 = 1;

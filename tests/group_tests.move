@@ -12,9 +12,9 @@ use humming::rules::{RuleSet, RuleSetCap};
 use humming::simple_payment_rule;
 use humming::test_helpers::{USDX, new_clock, setup_platform, setup_group, setup_any_of_group};
 use humming::token_gated_rule;
-use haneul::coin;
-use haneul::haneul::HANEUL;
-use haneul::test_scenario::{Self as ts};
+use sui::coin;
+use sui::sui::SUI;
+use sui::test_scenario::{Self as ts};
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;
@@ -32,7 +32,7 @@ fun group_token_gated_join_and_leave() {
     {
         let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
         let cap = s.take_from_sender<RuleSetCap>();
-        token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, true);
+        token_gated_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 500, true);
         s.return_to_sender(cap);
         ts::return_shared(set);
     };
@@ -41,7 +41,7 @@ fun group_token_gated_join_and_leave() {
     {
         let mut g = s.take_shared<Group>();
         let set = s.take_shared<RuleSet<JoinGroupOp>>();
-        let holdings = coin::mint_for_testing<HANEUL>(600, s.ctx());
+        let holdings = coin::mint_for_testing<SUI>(600, s.ctx());
         let (ticket, mut req) = group::request_join(&g, s.ctx());
         token_gated_rule::prove(&set, &mut req, &holdings);
         group::execute_join(&mut g, &set, ticket, req, &clock);
@@ -76,7 +76,7 @@ fun group_join_with_insufficient_balance_fails() {
     {
         let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
         let cap = s.take_from_sender<RuleSetCap>();
-        token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, true);
+        token_gated_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 500, true);
         s.return_to_sender(cap);
         ts::return_shared(set);
     };
@@ -84,7 +84,7 @@ fun group_join_with_insufficient_balance_fails() {
     s.next_tx(ALICE);
     let mut g = s.take_shared<Group>();
     let set = s.take_shared<RuleSet<JoinGroupOp>>();
-    let holdings = coin::mint_for_testing<HANEUL>(499, s.ctx());
+    let holdings = coin::mint_for_testing<SUI>(499, s.ctx());
     let (ticket, mut req) = group::request_join(&g, s.ctx());
     token_gated_rule::prove(&set, &mut req, &holdings);
     group::execute_join(&mut g, &set, ticket, req, &clock);
@@ -167,7 +167,7 @@ fun group_any_of_either_rule_admits() {
         let mut g = s.take_shared<Group>();
         let fee_config = s.take_shared<FeeConfig>();
         let set = s.take_shared<RuleSet<JoinGroupOp>>();
-        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
         let (ticket, mut req) = group::request_join(&g, s.ctx());
         simple_payment_rule::pay(&set, &fee_config, 1000, &mut req, &mut payment, s.ctx());
         group::execute_join(&mut g, &set, ticket, req, &clock);
@@ -183,7 +183,7 @@ fun group_any_of_either_rule_admits() {
     {
         let mut g = s.take_shared<Group>();
         let set = s.take_shared<RuleSet<JoinGroupOp>>();
-        let holdings = coin::mint_for_testing<HANEUL>(500, s.ctx());
+        let holdings = coin::mint_for_testing<SUI>(500, s.ctx());
         let (ticket, mut req) = group::request_join(&g, s.ctx());
         token_gated_rule::prove(&set, &mut req, &holdings);
         group::execute_join(&mut g, &set, ticket, req, &clock);
@@ -230,8 +230,8 @@ fun group_required_stamp_does_not_count_as_any_of() {
     {
         let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
         let cap = s.take_from_sender<RuleSetCap>();
-        token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, true);
-        simple_payment_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 1000, ADMIN, false);
+        token_gated_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 500, true);
+        simple_payment_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 1000, ADMIN, false);
         s.return_to_sender(cap);
         ts::return_shared(set);
     };
@@ -240,7 +240,7 @@ fun group_required_stamp_does_not_count_as_any_of() {
     s.next_tx(ALICE);
     let mut g = s.take_shared<Group>();
     let set = s.take_shared<RuleSet<JoinGroupOp>>();
-    let holdings = coin::mint_for_testing<HANEUL>(600, s.ctx());
+    let holdings = coin::mint_for_testing<SUI>(600, s.ctx());
     let (ticket, mut req) = group::request_join(&g, s.ctx());
     token_gated_rule::prove(&set, &mut req, &holdings);
     group::execute_join(&mut g, &set, ticket, req, &clock);
@@ -264,8 +264,8 @@ fun group_any_of_stamp_does_not_count_as_required() {
     {
         let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
         let cap = s.take_from_sender<RuleSetCap>();
-        token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, true);
-        simple_payment_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 1000, ADMIN, false);
+        token_gated_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 500, true);
+        simple_payment_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 1000, ADMIN, false);
         s.return_to_sender(cap);
         ts::return_shared(set);
     };
@@ -275,7 +275,7 @@ fun group_any_of_stamp_does_not_count_as_required() {
     let mut g = s.take_shared<Group>();
     let fee_config = s.take_shared<FeeConfig>();
     let set = s.take_shared<RuleSet<JoinGroupOp>>();
-    let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
     let (ticket, mut req) = group::request_join(&g, s.ctx());
     simple_payment_rule::pay(&set, &fee_config, 1000, &mut req, &mut payment, s.ctx());
     group::execute_join(&mut g, &set, ticket, req, &clock);
@@ -299,7 +299,7 @@ fun token_gated_two_coin_types_any_of() {
     {
         let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
         let cap = s.take_from_sender<RuleSetCap>();
-        token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, false);
+        token_gated_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 500, false);
         token_gated_rule::add<JoinGroupOp, USDX>(&mut set, &cap, 300, false);
         s.return_to_sender(cap);
         ts::return_shared(set);

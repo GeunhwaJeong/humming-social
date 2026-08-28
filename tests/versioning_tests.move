@@ -13,8 +13,8 @@ use humming::namespace::{Self, Namespace};
 use humming::rules::{Self, RuleSet, RuleSetCap};
 use humming::test_helpers::{new_clock, setup_namespace, setup_graph, setup_feed, setup_group};
 use humming::token_gated_rule;
-use haneul::haneul::HANEUL;
-use haneul::test_scenario::{Self as ts};
+use sui::sui::SUI;
+use sui::test_scenario::{Self as ts};
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;
@@ -86,7 +86,7 @@ fun version_gate_blocks_stale_rule_set() {
     let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
     let cap = s.take_from_sender<RuleSetCap>();
     rules::set_version_for_testing(&mut set, 0);
-    token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, true);
+    token_gated_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 500, true);
     s.return_to_sender(cap);
     ts::return_shared(set);
     s.end();
@@ -146,8 +146,8 @@ fun rules_migrate_restores_stale_rule_set() {
         rules::set_version_for_testing(&mut set, 0);
         rules::migrate(&mut set, &cap);
         assert!(rules::version(&set) == rules::current_version());
-        token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, true);
-        assert!(rules::has_rule<JoinGroupOp, token_gated_rule::TokenGatedRule<HANEUL>>(&set));
+        token_gated_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 500, true);
+        assert!(rules::has_rule<JoinGroupOp, token_gated_rule::TokenGatedRule<SUI>>(&set));
         s.return_to_sender(cap);
         ts::return_shared(set);
     };

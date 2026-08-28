@@ -20,9 +20,9 @@ use humming::feed::{Self, Feed};
 use humming::platform::{Self, FeeConfig};
 use humming::rules;
 use std::string::String;
-use haneul::coin::Coin;
-use haneul::event;
-use haneul::table::{Self, Table};
+use sui::coin::Coin;
+use sui::event;
+use sui::table::{Self, Table};
 
 const ENotAuthor: u64 = 0;
 const EPostNotFound: u64 = 1;

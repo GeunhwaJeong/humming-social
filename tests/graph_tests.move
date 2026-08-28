@@ -12,9 +12,9 @@ use humming::platform::FeeConfig;
 use humming::rules::{RuleSet, RuleSetCap};
 use humming::simple_payment_rule;
 use humming::test_helpers::{new_clock, setup_platform, setup_graph, setup_paid_follow, follow};
-use haneul::coin::{Self, Coin};
-use haneul::haneul::HANEUL;
-use haneul::test_scenario::{Self as ts};
+use sui::coin::{Self, Coin};
+use sui::sui::SUI;
+use sui::test_scenario::{Self as ts};
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;
@@ -72,7 +72,7 @@ fun graph_paid_follow() {
         let bob_set_id = graph::follow_rules_of(&g, BOB).destroy_some();
         let bob_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, bob_set_id);
         // Pays with a larger coin: the amount is split off, change stays.
-        let mut payment = coin::mint_for_testing<HANEUL>(1500, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(1500, s.ctx());
         let (ticket, mut req) = graph::request_follow(&g, BOB, s.ctx());
         simple_payment_rule::pay(&bob_set, &fee_config, 1000, &mut req, &mut payment, s.ctx());
         assert!(payment.value() == 500);
@@ -88,7 +88,7 @@ fun graph_paid_follow() {
     // Bob received the payment minus the 5% platform cut.
     s.next_tx(BOB);
     {
-        let payment = s.take_from_sender<Coin<HANEUL>>();
+        let payment = s.take_from_sender<Coin<SUI>>();
         assert!(payment.value() == 950);
         s.return_to_sender(payment);
     };
@@ -96,7 +96,7 @@ fun graph_paid_follow() {
     // The treasury (ADMIN) received the cut.
     s.next_tx(ADMIN);
     {
-        let cut = s.take_from_sender<Coin<HANEUL>>();
+        let cut = s.take_from_sender<Coin<SUI>>();
         assert!(cut.value() == 50);
         s.return_to_sender(cut);
     };
@@ -121,7 +121,7 @@ fun graph_paid_follow_wrong_amount() {
     let graph_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, graph::graph_rules_id(&g));
     let bob_set_id = graph::follow_rules_of(&g, BOB).destroy_some();
     let bob_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, bob_set_id);
-    let mut payment = coin::mint_for_testing<HANEUL>(999, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(999, s.ctx());
     let (ticket, mut req) = graph::request_follow(&g, BOB, s.ctx());
     simple_payment_rule::pay(&bob_set, &fee_config, 1000, &mut req, &mut payment, s.ctx());
     graph::execute_follow_gated(&mut g, &graph_set, &bob_set, ticket, req, &clock, s.ctx());
@@ -178,7 +178,7 @@ fun graph_double_pay_aborts() {
     let graph_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, graph::graph_rules_id(&g));
     let bob_set_id = graph::follow_rules_of(&g, BOB).destroy_some();
     let bob_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, bob_set_id);
-    let mut payment = coin::mint_for_testing<HANEUL>(3000, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(3000, s.ctx());
     let (ticket, mut req) = graph::request_follow(&g, BOB, s.ctx());
     simple_payment_rule::pay(&bob_set, &fee_config, 1000, &mut req, &mut payment, s.ctx());
     simple_payment_rule::pay(&bob_set, &fee_config, 1000, &mut req, &mut payment, s.ctx());
@@ -214,7 +214,7 @@ fun graph_stamp_cannot_replay_across_rule_sets() {
     let carol_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, carol_set_id);
     let bob_set_id = graph::follow_rules_of(&g, BOB).destroy_some();
     let bob_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, bob_set_id);
-    let mut payment = coin::mint_for_testing<HANEUL>(10, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(10, s.ctx());
     let (ticket, mut req) = graph::request_follow(&g, BOB, s.ctx());
     simple_payment_rule::pay(&carol_set, &fee_config, 10, &mut req, &mut payment, s.ctx());
     graph::execute_follow_gated(&mut g, &graph_set, &bob_set, ticket, req, &clock, s.ctx());
@@ -296,7 +296,7 @@ fun graph_removed_rule_no_longer_enforced() {
         let set_id = graph::follow_rules_of(&g, BOB).destroy_some();
         let mut set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, set_id);
         let cap = s.take_from_sender<RuleSetCap>();
-        simple_payment_rule::remove<FollowOp, HANEUL>(&mut set, &cap);
+        simple_payment_rule::remove<FollowOp, SUI>(&mut set, &cap);
         s.return_to_sender(cap);
         ts::return_shared(set);
         ts::return_shared(g);
@@ -337,8 +337,8 @@ fun pay_amount_mismatch_aborts() {
         let set_id = graph::follow_rules_of(&g, BOB).destroy_some();
         let mut set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, set_id);
         let cap = s.take_from_sender<RuleSetCap>();
-        simple_payment_rule::remove<FollowOp, HANEUL>(&mut set, &cap);
-        simple_payment_rule::add<FollowOp, HANEUL>(&mut set, &cap, 5000, BOB, true);
+        simple_payment_rule::remove<FollowOp, SUI>(&mut set, &cap);
+        simple_payment_rule::add<FollowOp, SUI>(&mut set, &cap, 5000, BOB, true);
         s.return_to_sender(cap);
         ts::return_shared(set);
         ts::return_shared(g);
@@ -351,7 +351,7 @@ fun pay_amount_mismatch_aborts() {
     let graph_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, graph::graph_rules_id(&g));
     let bob_set_id = graph::follow_rules_of(&g, BOB).destroy_some();
     let bob_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, bob_set_id);
-    let mut payment = coin::mint_for_testing<HANEUL>(5000, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(5000, s.ctx());
     let (ticket, mut req) = graph::request_follow(&g, BOB, s.ctx());
     simple_payment_rule::pay(&bob_set, &fee_config, 1000, &mut req, &mut payment, s.ctx());
     graph::execute_follow_gated(&mut g, &graph_set, &bob_set, ticket, req, &clock, s.ctx());

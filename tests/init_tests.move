@@ -12,13 +12,13 @@ use humming::platform::{Self, FeeConfig, FeeConfigCap};
 use humming::rules::RuleSet;
 use humming::test_helpers::{str, setup_namespace};
 use humming::username_validation_rule;
-use haneul::coin;
-use haneul::display::Display;
-use haneul::haneul::HANEUL;
-use haneul::kiosk::{Self, Kiosk, KioskOwnerCap};
-use haneul::package::Publisher;
-use haneul::test_scenario::{Self as ts};
-use haneul::transfer_policy::TransferPolicy;
+use sui::coin;
+use sui::display::Display;
+use sui::sui::SUI;
+use sui::kiosk::{Self, Kiosk, KioskOwnerCap};
+use sui::package::Publisher;
+use sui::test_scenario::{Self as ts};
+use sui::transfer_policy::TransferPolicy;
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;
@@ -89,7 +89,7 @@ fun username_kiosk_trade() {
     {
         let mut k = s.take_shared<Kiosk>();
         let policy = s.take_shared<TransferPolicy<Username>>();
-        let payment = coin::mint_for_testing<HANEUL>(5000, s.ctx());
+        let payment = coin::mint_for_testing<SUI>(5000, s.ctx());
         let (username, request) = k.purchase<Username>(username_id, payment);
         policy.confirm_request(request);
         assert!(namespace::username_name(&username) == str(b"alice"));

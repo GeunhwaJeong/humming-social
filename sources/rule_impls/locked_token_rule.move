@@ -25,10 +25,10 @@
 module humming::locked_token_rule;
 
 use humming::rules::{Self, Request, RuleSet, RuleSetCap};
-use haneul::balance::{Self, Balance};
-use haneul::clock::Clock;
-use haneul::coin::{Self, Coin};
-use haneul::event;
+use sui::balance::{Self, Balance};
+use sui::clock::Clock;
+use sui::coin::{Self, Coin};
+use sui::event;
 
 const EInsufficientLockedBalance: u64 = 0;
 const EStillLocked: u64 = 1;

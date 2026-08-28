@@ -14,9 +14,9 @@ module humming::graph;
 
 use humming::rules::{Self, Request, RuleSet, RuleSetCap};
 use std::string::String;
-use haneul::clock::Clock;
-use haneul::event;
-use haneul::table::{Self, Table};
+use sui::clock::Clock;
+use sui::event;
+use sui::table::{Self, Table};
 
 const ECannotFollowSelf: u64 = 0;
 const EAlreadyFollowing: u64 = 1;

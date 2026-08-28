@@ -22,9 +22,9 @@ use humming::username_validation_rule;
 use humming::namespace::CreateUsernameOp;
 use humming::group::JoinGroupOp;
 use std::string::{Self, String};
-use haneul::clock::{Self, Clock};
-use haneul::haneul::HANEUL;
-use haneul::test_scenario::{Self as ts, Scenario};
+use sui::clock::{Self, Clock};
+use sui::sui::SUI;
+use sui::test_scenario::{Self as ts, Scenario};
 
 const ADMIN: address = @0xAD;
 
@@ -101,7 +101,7 @@ public fun setup_paid_follow(s: &mut Scenario, account: address, amount: u64) {
         let set_id = graph::follow_rules_of(&g, account).destroy_some();
         let mut set = ts::take_shared_by_id<RuleSet<FollowOp>>(s, set_id);
         let cap = s.take_from_sender<RuleSetCap>();
-        simple_payment_rule::add<FollowOp, HANEUL>(&mut set, &cap, amount, account, true);
+        simple_payment_rule::add<FollowOp, SUI>(&mut set, &cap, amount, account, true);
         s.return_to_sender(cap);
         ts::return_shared(set);
         ts::return_shared(g);
@@ -152,8 +152,8 @@ public fun setup_any_of_group(s: &mut Scenario) {
     s.next_tx(ADMIN);
     let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
     let cap = s.take_from_sender<RuleSetCap>();
-    token_gated_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, false);
-    simple_payment_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 1000, ADMIN, false);
+    token_gated_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 500, false);
+    simple_payment_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 1000, ADMIN, false);
     s.return_to_sender(cap);
     ts::return_shared(set);
 }
@@ -164,7 +164,7 @@ public fun setup_locked_group(s: &mut Scenario) {
     s.next_tx(ADMIN);
     let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
     let cap = s.take_from_sender<RuleSetCap>();
-    locked_token_rule::add<JoinGroupOp, HANEUL>(&mut set, &cap, 500, DAY_MS, true);
+    locked_token_rule::add<JoinGroupOp, SUI>(&mut set, &cap, 500, DAY_MS, true);
     s.return_to_sender(cap);
     ts::return_shared(set);
 }

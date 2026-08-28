@@ -21,7 +21,7 @@ module humming::subscriber_only_rule;
 
 use humming::rules::{Self, Request, RuleSet, RuleSetCap};
 use humming::subscriptions::{Self, Tier};
-use haneul::clock::Clock;
+use sui::clock::Clock;
 
 const EWrongTier: u64 = 0;
 const ENotSubscribed: u64 = 1;

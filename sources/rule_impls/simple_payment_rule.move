@@ -13,7 +13,7 @@ module humming::simple_payment_rule;
 
 use humming::platform::{Self, FeeConfig};
 use humming::rules::{Self, Request, RuleSet, RuleSetCap};
-use haneul::coin::Coin;
+use sui::coin::Coin;
 
 const EAlreadyPaid: u64 = 1;
 const EPriceMismatch: u64 = 2;

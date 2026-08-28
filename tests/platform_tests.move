@@ -24,10 +24,10 @@ use humming::test_helpers::{
     create_simple_post,
 };
 use humming::tips;
-use haneul::coin::{Self, Coin};
-use haneul::event;
-use haneul::haneul::HANEUL;
-use haneul::test_scenario::{Self as ts, Scenario};
+use sui::coin::{Self, Coin};
+use sui::event;
+use sui::sui::SUI;
+use sui::test_scenario::{Self as ts, Scenario};
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;
@@ -59,14 +59,14 @@ fun fee_can_be_walked_to_zero() {
 
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        let cap = subscriptions::create<SUI>(1000, DAY_MS, str(b""), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
     s.next_tx(ALICE);
     {
-        let mut tier = s.take_shared<Tier<HANEUL>>();
+        let mut tier = s.take_shared<Tier<SUI>>();
         let fee_config = s.take_shared<FeeConfig>();
-        let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
         subscriptions::subscribe(&mut tier, &fee_config, ALICE, 1000, &mut payment, &clock, s.ctx());
         payment.destroy_zero();
         ts::return_shared(tier);
@@ -76,7 +76,7 @@ fun fee_can_be_walked_to_zero() {
     // Bob receives the full amount.
     s.next_tx(BOB);
     {
-        let proceeds = s.take_from_sender<Coin<HANEUL>>();
+        let proceeds = s.take_from_sender<Coin<SUI>>();
         assert!(proceeds.value() == 1000);
         s.return_to_sender(proceeds);
     };
@@ -124,15 +124,15 @@ fun pause_blocks_subscribe() {
 
     s.next_tx(BOB);
     {
-        let cap = subscriptions::create<HANEUL>(1000, DAY_MS, str(b""), s.ctx());
+        let cap = subscriptions::create<SUI>(1000, DAY_MS, str(b""), s.ctx());
         transfer::public_transfer(cap, BOB);
     };
     pause(&mut s);
 
     s.next_tx(ALICE);
-    let mut tier = s.take_shared<Tier<HANEUL>>();
+    let mut tier = s.take_shared<Tier<SUI>>();
     let fee_config = s.take_shared<FeeConfig>();
-    let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
     subscriptions::subscribe(&mut tier, &fee_config, ALICE, 1000, &mut payment, &clock, s.ctx());
     payment.destroy_zero();
     ts::return_shared(tier);
@@ -153,16 +153,16 @@ fun pause_blocks_purchase() {
     s.next_tx(ALICE);
     {
         let mut f = s.take_shared<Feed>();
-        paid_posts::create<HANEUL>(&mut f, p1, 500, s.ctx());
+        paid_posts::create<SUI>(&mut f, p1, 500, s.ctx());
         ts::return_shared(f);
     };
     pause(&mut s);
 
     s.next_tx(BOB);
-    let mut paywall = s.take_shared<PostPaywall<HANEUL>>();
+    let mut paywall = s.take_shared<PostPaywall<SUI>>();
     let fee_config = s.take_shared<FeeConfig>();
     let f = s.take_shared<Feed>();
-    let mut payment = coin::mint_for_testing<HANEUL>(500, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(500, s.ctx());
     paid_posts::purchase(&mut paywall, &fee_config, &f, 500, &mut payment, s.ctx());
     payment.burn_for_testing();
     ts::return_shared(paywall);
@@ -181,7 +181,7 @@ fun pause_blocks_tip() {
 
     s.next_tx(BOB);
     let fee_config = s.take_shared<FeeConfig>();
-    let mut payment = coin::mint_for_testing<HANEUL>(100, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(100, s.ctx());
     tips::tip(&fee_config, ALICE, 100, &mut payment, s.ctx());
     payment.burn_for_testing();
     ts::return_shared(fee_config);
@@ -204,7 +204,7 @@ fun pause_blocks_paid_follow() {
     let graph_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, graph::graph_rules_id(&g));
     let bob_set_id = graph::follow_rules_of(&g, BOB).destroy_some();
     let bob_set = ts::take_shared_by_id<RuleSet<FollowOp>>(&s, bob_set_id);
-    let mut payment = coin::mint_for_testing<HANEUL>(1000, s.ctx());
+    let mut payment = coin::mint_for_testing<SUI>(1000, s.ctx());
     let (ticket, mut req) = graph::request_follow(&g, BOB, s.ctx());
     simple_payment_rule::pay(&bob_set, &fee_config, 1000, &mut req, &mut payment, s.ctx());
     graph::execute_follow_gated(&mut g, &graph_set, &bob_set, ticket, req, &clock, s.ctx());
@@ -237,7 +237,7 @@ fun unpause_restores_payments() {
     s.next_tx(BOB);
     {
         let fee_config = s.take_shared<FeeConfig>();
-        let mut payment = coin::mint_for_testing<HANEUL>(100, s.ctx());
+        let mut payment = coin::mint_for_testing<SUI>(100, s.ctx());
         tips::tip(&fee_config, ALICE, 100, &mut payment, s.ctx());
         payment.destroy_zero();
         ts::return_shared(fee_config);

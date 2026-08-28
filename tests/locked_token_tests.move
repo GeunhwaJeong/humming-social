@@ -9,10 +9,10 @@ use humming::group::{Self, Group, JoinGroupOp};
 use humming::locked_token_rule::{Self, Lock};
 use humming::rules::{Self, RuleSet, RuleSetCap};
 use humming::test_helpers::{new_clock, setup_group, setup_locked_group};
-use haneul::coin;
-use haneul::event;
-use haneul::haneul::HANEUL;
-use haneul::test_scenario::{Self as ts};
+use sui::coin;
+use sui::event;
+use sui::sui::SUI;
+use sui::test_scenario::{Self as ts};
 
 const ADMIN: address = @0xAD;
 const ALICE: address = @0xA11CE;
@@ -30,8 +30,8 @@ fun group_locked_token_join_and_withdraw_after_unlock() {
     {
         let mut g = s.take_shared<Group>();
         let set = s.take_shared<RuleSet<JoinGroupOp>>();
-        let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
-        locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(600, s.ctx()));
+        let mut lock = locked_token_rule::new_lock<SUI>(s.ctx());
+        locked_token_rule::deposit(&mut lock, coin::mint_for_testing<SUI>(600, s.ctx()));
         let (ticket, mut req) = group::request_join(&g, s.ctx());
         locked_token_rule::prove(&set, &mut req, &mut lock, &clock);
         group::execute_join(&mut g, &set, ticket, req, &clock);
@@ -57,7 +57,7 @@ fun group_locked_token_join_and_withdraw_after_unlock() {
     s.next_tx(ALICE);
     {
         clock.set_for_testing(DAY_MS);
-        let mut lock = s.take_from_sender<Lock<HANEUL>>();
+        let mut lock = s.take_from_sender<Lock<SUI>>();
         let funds = locked_token_rule::withdraw(&mut lock, 600, &clock, s.ctx());
         assert!(funds.value() == 600);
         funds.burn_for_testing();
@@ -82,8 +82,8 @@ fun locked_token_withdraw_before_unlock_fails() {
     s.next_tx(ALICE);
     let mut g = s.take_shared<Group>();
     let set = s.take_shared<RuleSet<JoinGroupOp>>();
-    let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
-    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(600, s.ctx()));
+    let mut lock = locked_token_rule::new_lock<SUI>(s.ctx());
+    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<SUI>(600, s.ctx()));
     let (ticket, mut req) = group::request_join(&g, s.ctx());
     locked_token_rule::prove(&set, &mut req, &mut lock, &clock);
     let funds = locked_token_rule::withdraw(&mut lock, 600, &clock, s.ctx());
@@ -108,7 +108,7 @@ fun locked_token_add_excessive_min_lock_ms_fails() {
     s.next_tx(ADMIN);
     let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
     let cap = s.take_from_sender<RuleSetCap>();
-    locked_token_rule::add<JoinGroupOp, HANEUL>(
+    locked_token_rule::add<JoinGroupOp, SUI>(
         &mut set,
         &cap,
         500,
@@ -131,7 +131,7 @@ fun locked_token_prove_at_max_lock_ms_bounds_unlock() {
     {
         let mut set = s.take_shared<RuleSet<JoinGroupOp>>();
         let cap = s.take_from_sender<RuleSetCap>();
-        locked_token_rule::add<JoinGroupOp, HANEUL>(
+        locked_token_rule::add<JoinGroupOp, SUI>(
             &mut set,
             &cap,
             500,
@@ -146,8 +146,8 @@ fun locked_token_prove_at_max_lock_ms_bounds_unlock() {
     s.next_tx(ALICE);
     {
         let set = s.take_shared<RuleSet<JoinGroupOp>>();
-        let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
-        locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(600, s.ctx()));
+        let mut lock = locked_token_rule::new_lock<SUI>(s.ctx());
+        locked_token_rule::deposit(&mut lock, coin::mint_for_testing<SUI>(600, s.ctx()));
         let mut req = rules::new_request<JoinGroupOp>(@0x0, ALICE);
         locked_token_rule::prove(&set, &mut req, &mut lock, &clock);
         rules::destroy(req);
@@ -169,8 +169,8 @@ fun stale_lock_blocks_withdraw() {
     let clock = new_clock(&mut s);
 
     s.next_tx(ALICE);
-    let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
-    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(100, s.ctx()));
+    let mut lock = locked_token_rule::new_lock<SUI>(s.ctx());
+    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<SUI>(100, s.ctx()));
     locked_token_rule::set_version_for_testing(&mut lock, 0);
     let funds = locked_token_rule::withdraw(&mut lock, 100, &clock, s.ctx());
     funds.burn_for_testing();
@@ -187,8 +187,8 @@ fun lock_migrate_restores_stale_lock() {
     let clock = new_clock(&mut s);
 
     s.next_tx(ALICE);
-    let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
-    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(100, s.ctx()));
+    let mut lock = locked_token_rule::new_lock<SUI>(s.ctx());
+    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<SUI>(100, s.ctx()));
     locked_token_rule::set_version_for_testing(&mut lock, 0);
     locked_token_rule::migrate(&mut lock);
     assert!(locked_token_rule::version(&lock) == rules::current_version());
@@ -208,7 +208,7 @@ fun lock_migrate_current_version_aborts() {
     let mut s = ts::begin(ALICE);
 
     s.next_tx(ALICE);
-    let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
+    let mut lock = locked_token_rule::new_lock<SUI>(s.ctx());
     locked_token_rule::migrate(&mut lock);
     locked_token_rule::keep(lock, s.ctx());
     s.end();
@@ -224,8 +224,8 @@ fun locked_token_insufficient_locked_balance_fails() {
     s.next_tx(ALICE);
     let mut g = s.take_shared<Group>();
     let set = s.take_shared<RuleSet<JoinGroupOp>>();
-    let mut lock = locked_token_rule::new_lock<HANEUL>(s.ctx());
-    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<HANEUL>(499, s.ctx()));
+    let mut lock = locked_token_rule::new_lock<SUI>(s.ctx());
+    locked_token_rule::deposit(&mut lock, coin::mint_for_testing<SUI>(499, s.ctx()));
     let (ticket, mut req) = group::request_join(&g, s.ctx());
     locked_token_rule::prove(&set, &mut req, &mut lock, &clock);
     group::execute_join(&mut g, &set, ticket, req, &clock);

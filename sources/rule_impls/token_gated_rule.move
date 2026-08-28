@@ -13,7 +13,7 @@
 module humming::token_gated_rule;
 
 use humming::rules::{Self, Request, RuleSet, RuleSetCap};
-use haneul::coin::Coin;
+use sui::coin::Coin;
 
 const EInsufficientBalance: u64 = 0;
 
