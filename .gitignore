@@ -1,3 +1,5 @@
 build/
 .DS_Store
+# per-environment publish scratch files the CLI writes for local networks
 Pub.local.toml
+Pub.*.toml
