@@ -1,0 +1,15 @@
+# Haneul mainnet (chain id a0053d9e) publish record, kept out of Published.toml so the
+# Sui toolchain does not read it as the `mainnet` environment (chain id 35834a8a).
+# To publish or upgrade on Haneul again, rename this file back to Published.toml
+# (or merge this section into it) and build with the Haneul toolchain.
+# The `main` branch holds the tree as published there (to be tagged `haneul-mainnet-final`
+# when this branch replaces it).
+
+[published.mainnet]
+chain-id = "a0053d9e"
+published-at = "0x0a5ad6be4dfe8d86fcb675442fbcce622085b68e4a8abd81a897ef725fa4a348"
+original-id = "0x0a5ad6be4dfe8d86fcb675442fbcce622085b68e4a8abd81a897ef725fa4a348"
+version = 1
+toolchain-version = "1.5.0"
+build-config = { flavor = "haneul", edition = "2024" }
+upgrade-capability = "0x2b3fa395e978ab1ccf3ad92c05942d25e9331243ea9db5bd8c58a60382d4caa6"

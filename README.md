@@ -46,8 +46,11 @@ version 1 in transaction
 | `FeeConfig` (shared) | `0xa95599b9e52583fa2c532000a382c5004da7a9d40665313273c2346003d06511` |
 | `PrefsRegistry` (shared) | `0xe46f78a01e1e5100bfe489aac7a4fefdca34b19b1f24160450715f2ab476abeb` |
 
-Machine-readable publish metadata is tracked in
-[`Published.toml`](Published.toml).
+Machine-readable publish metadata for the Haneul deployment is kept in
+[`haneul-mainnet.published.toml`](haneul-mainnet.published.toml); the
+`main` branch holds the tree as published there (to be tagged
+`haneul-mainnet-final` when this branch replaces it). [`Published.toml`](Published.toml) records the publishes
+made with the Sui toolchain on this branch.
 
 ## Built on the object model
 
