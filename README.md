@@ -1,8 +1,8 @@
 # humming — social primitives on Move
 
-On-chain social primitives for the Haneul object chain: usernames, follow
-graphs, feeds, groups, subscriptions, and paywalls, tied together by a
-composable rule framework. The package decomposes into small primitives
+On-chain social primitives for Sui: usernames, follow graphs, feeds,
+groups, subscriptions, and paywalls, tied together by a composable rule
+framework. The package decomposes into small primitives
 that each own their state, with access policies attached as rules, and
 every mechanism is built natively on the Move object model.
 
@@ -29,28 +29,29 @@ sources/
     └── subscriber_only_rule.move     Active-subscriber-only interactions
 tests/
 ├── test_helpers.move   Shared scenario fixtures
-└── *_tests.move        13 per-module suites, 109 scenario tests (all passing)
+└── *_tests.move        13 per-module suites, 110 scenario tests (all passing)
 ```
 
 ## Deployments
 
-Live on Haneul mainnet (chain id `a0053d9e`), published as package
+Live on Sui mainnet (chain id `35834a8a`), published as package
 version 1 in transaction
-`BtFFMEhThk47LSRhjywmU7hPWHRWht61bYVyrkMvMzMc`.
+[`C7jTGgV4iSKBYvR2WiSYW5EmKtazMm6UCBKNsRcfAJFF`](https://suiscan.xyz/mainnet/tx/C7jTGgV4iSKBYvR2WiSYW5EmKtazMm6UCBKNsRcfAJFF).
 
 | Object | ID |
 |--------|----|
-| Package | `0x0a5ad6be4dfe8d86fcb675442fbcce622085b68e4a8abd81a897ef725fa4a348` |
-| `Feed` (shared) | `0xb7e76913c0600440e860a143c6ec5604186d5866a9e693aab2a4faa618d3e13a` |
-| `RuleSet<CreatePostOp>` (shared) | `0x76487f01752f41369dfed388cf48a55e0f0c1deb6360010533a3c42f7fcfeace` |
-| `FeeConfig` (shared) | `0xa95599b9e52583fa2c532000a382c5004da7a9d40665313273c2346003d06511` |
-| `PrefsRegistry` (shared) | `0xe46f78a01e1e5100bfe489aac7a4fefdca34b19b1f24160450715f2ab476abeb` |
+| Package | [`0xab4b13423a5f6d06d0c674d34cffcc3ef608b3ecf8995c046ddd08c5f1e02cec`](https://suiscan.xyz/mainnet/object/0xab4b13423a5f6d06d0c674d34cffcc3ef608b3ecf8995c046ddd08c5f1e02cec) |
+| `Feed` (shared) | [`0xd0f89f42e610e92085e49798e77c61415576562e2ddac3c498746ffa812d2a71`](https://suiscan.xyz/mainnet/object/0xd0f89f42e610e92085e49798e77c61415576562e2ddac3c498746ffa812d2a71) |
+| `RuleSet<CreatePostOp>` (shared) | [`0xa115c8a771b498221d7f37e56e6fda420850ab9159cfbeed3dcf9782370d23df`](https://suiscan.xyz/mainnet/object/0xa115c8a771b498221d7f37e56e6fda420850ab9159cfbeed3dcf9782370d23df) |
+| `FeeConfig` (shared) | [`0xfdc95259beccc716d344a79be87681c2c65f102d7630e0d92ec118c418e2fe22`](https://suiscan.xyz/mainnet/object/0xfdc95259beccc716d344a79be87681c2c65f102d7630e0d92ec118c418e2fe22) |
+| `PrefsRegistry` (shared) | [`0xe3c914089b09a0cae4fb0142e3a76244d492cf6c779fd2ccb09c10fdf4e069dd`](https://suiscan.xyz/mainnet/object/0xe3c914089b09a0cae4fb0142e3a76244d492cf6c779fd2ccb09c10fdf4e069dd) |
 
-Machine-readable publish metadata for the Haneul deployment is kept in
-[`haneul-mainnet.published.toml`](haneul-mainnet.published.toml); the
-`main` branch holds the tree as published there (to be tagged
-`haneul-mainnet-final` when this branch replaces it). [`Published.toml`](Published.toml) records the publishes
-made with the Sui toolchain on this branch.
+Machine-readable publish metadata for the Sui deployments (mainnet and
+testnet) is kept in [`Published.toml`](Published.toml), which is what
+`sui client upgrade` reads. The package was first published on the
+Haneul object chain; that deployment's metadata is preserved in
+[`haneul-mainnet.published.toml`](haneul-mainnet.published.toml) and its
+source tree on the `haneul` branch and the `haneul-mainnet-final` tag.
 
 ## Built on the object model
 
@@ -73,7 +74,7 @@ made with the Sui toolchain on this branch.
 ## The rule system
 
 Move has no dynamic dispatch, so rule enforcement is built on
-**hot-potato receipts** (the `haneul::transfer_policy` pattern,
+**hot-potato receipts** (the `sui::transfer_policy` pattern,
 hardened):
 
 1. `request_*` on a primitive returns a primitive-specific **ticket** and a
@@ -95,7 +96,7 @@ Example PTB — paid follow (target has a payment rule):
 
 ```
 r0: (ticket, req) = graph::request_follow(graph, target)
-     simple_payment_rule::pay<FollowOp, HANEUL>(target_rules, &mut req, &mut coin)  // fee split off, change kept
+     simple_payment_rule::pay<FollowOp, SUI>(target_rules, &mut req, &mut coin)  // fee split off, change kept
      graph::execute_follow_gated(graph, graph_rules, target_rules, ticket, req, clock)
 ```
 
@@ -140,7 +141,7 @@ request. Two problems:
   payment never silently so.*
 - **Ergonomics**: requiring the exact amount forced callers to pre-split
   coins. `pay` now takes `&mut Coin<T>` and splits the fee off itself
-  (standard Haneul payment shape), so a PTB can pass any sufficiently
+  (standard Sui payment shape), so a PTB can pass any sufficiently
   large coin — including the gas coin — and keep the change.
 
 ### 2. `locked_token_rule` — flash-proof token gating (new module)
@@ -343,8 +344,8 @@ product-level findings, fixed here (62 → 68 tests):
 ## Build & test
 
 ```bash
-haneul move build --build-env mainnet
-haneul move test --build-env mainnet   # 109 tests
+sui move build --build-env mainnet
+sui move test --build-env mainnet   # 110 tests
 ```
 
 ## License
